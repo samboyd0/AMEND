@@ -22,3 +22,9 @@
 #'
 #' @source \url{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE35378}, \url{https://version-11-0b.string-db.org/cgi/download?sessionId=%24input-%3E%7BsessionId%7D&species_text=Mus+musculus}
 "eci_scores"
+
+#' Log fold changes for GLUT4 KO vs. Control for proteins in the PPI network
+#'
+#' @source \url{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE35378}, \url{https://version-11-0b.string-db.org/cgi/download?sessionId=%24input-%3E%7BsessionId%7D&species_text=Mus+musculus}
+"logFC_KO"
+

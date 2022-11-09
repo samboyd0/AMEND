@@ -14,56 +14,51 @@ data <- Biobase::exprs(gse1[[1]])
 re <- oligo::basicRMA(data, row.names(data))
 
 ## checking for genes with zero sample variance
-# experiment 1: GLUT4 overexpressor vs control
 s <- matrix()
 r <- matrix()
 for(i in 1:nrow(re)){
-  t <- sd(re[i, 1:6])
+  t <- sd(re[i,])
   if(t == 0){
     s <- c(s, t)
     r <- c(r, i)
   }
 }
-df1 <- data.frame(var = s[-1], row = r[-1], name = row.names(re)[r[-1]])
-# experiment 2: GLUT4 knockout vs control
-s <- matrix()
-r <- matrix()
-for(i in 1:nrow(re)){
-  t <- sd(re[i, 7:12])
-  if(t == 0){
-    s <- c(s, t)
-    r <- c(r, i)
-  }
-}
-df2 <- data.frame(var = s[-1], row = r[-1], name = row.names(re)[r[-1]])
+var_check <- data.frame(var = s[-1], row = r[-1], name = row.names(re)[r[-1]])
 
+# Design matrix
+groups = c(rep("OX", 3), rep("OX_ctrl", 3), rep("KO", 3), rep("KO_ctrl", 3))
+X = stats::model.matrix(~0+groups)
+colnames(X) = sort(unique(groups))
 
-## Differential Expression analysis using limma
-design <- cbind(ctrl = 1, trt = c(0, 0, 0, 1, 1, 1))
+# Fitting a linear model
+fit <- limma::lmFit(re[-var_check$row,], design = X)
 
-# logFC for over-expressor experiment
-fit1 <- limma::lmFit(re[-df1$row,1:6], design)
-fit1 <- limma::eBayes(fit1)
-tt1 <- limma::topTable(fit1, coef = 2, number = dim(re)[1], adjust = "BH")
-esize1 <- tt1$logFC
-pval1 <- tt1$P.Value
-names(esize1) <- row.names(tt1)
-names(pval1) <- row.names(tt1)
+# Getting contrast coefficents for KO vs. Ctrl 1
+cnt_KO = limma::makeContrasts(contrasts = "KO-KO_ctrl", levels = colnames(X))
+fit_KO = limma::contrasts.fit(fit, contrasts = cnt_KO)
+fit_KO <- limma::eBayes(fit_KO)
+tt_KO <- limma::topTable(fit_KO, number = 100000, adjust.method = "BH")
+esize_KO <- tt_KO$logFC
+pval_KO <- tt_KO$P.Value
+names(esize_KO) <- row.names(tt_KO)
+names(pval_KO) <- row.names(tt_KO)
 
-# logFC for knockout experiment
-fit2 <- limma::lmFit(re[-df2$row,7:12], design)
-fit2 <- limma::eBayes(fit2)
-tt2 <- limma::topTable(fit2, coef = 2, number = dim(re)[1], adjust = "BH")
-esize2 <- tt2$logFC
-pval2 <- tt2$P.Value
-names(esize2) <- row.names(tt2)
-names(pval2) <- row.names(tt2)
+# Getting contrast coefficents for OX vs. Ctrl 2
+cnt_OX = limma::makeContrasts(contrasts = "OX-OX_ctrl", levels = colnames(X))
+fit_OX = limma::contrasts.fit(fit, contrasts = cnt_OX)
+fit_OX <- limma::eBayes(fit_OX)
+tt_OX <- limma::topTable(fit_OX, number = 100000, adjust.method = "BH")
+esize_OX <- tt_OX$logFC
+pval_OX <- tt_OX$P.Value
+names(esize_OX) <- row.names(tt_OX)
+names(pval_OX) <- row.names(tt_OX)
 
 # Getting ECI values for each gene
-eci <- ECEA::getECI(smd1 = esize1, smd2 = esize2, p1 = pval1, p2 = pval2)
+eci <- ECEA::getECI(smd1 = esize_OX, smd2 = esize_KO, p1 = pval_OX, p2 = pval_KO)
 eci <- data.frame(ECI = eci, row.names = names(eci))
 
-# mapping probe identifier to gene symbol & aggregating ECI values
+# Mapping probe identifier to gene symbol & aggregating ECI values and logFC values for KO vs. Ctrl
+datFC = data.frame(logFC = tt_KO$logFC * (1 - tt_KO$P.Value), row.names = row.names(tt_KO))
 dat <- eci
 sym_map <- mgu74av2.db::mgu74av2SYMBOL
 
@@ -75,13 +70,18 @@ genes <- na.omit(genes)
 common <- intersect(names(genes), rownames(dat))
 genes <- genes[common]
 dat <- dat[common,]
+datFC = datFC[common,]
 
 # Aggregate probes... take median ECI if multiple probes map to same gene
 dat <- aggregate(dat, by = list(genes), FUN = median)
 names(dat) <- c("Gene", "ECI")
-r <- dat$Gene
+row.names(dat) <- dat$Gene
 dat <- dat %>% dplyr::select(-Gene)
-row.names(dat) <- r
+
+datFC <- aggregate(datFC, by = list(genes), FUN = median)
+names(datFC) <- c("Gene", "logFC")
+row.names(datFC) <- datFC$Gene
+datFC <- datFC %>% dplyr::select(-Gene)
 
 
 #=========================#
@@ -106,8 +106,8 @@ remove_duplicate_edges = function(x){
   return(cbind(el, igraph::E(g)$weight))
 }
 
-# Loading in mus musculus PPIN from String v11.0
-ppi = data.table::fread(file = "~/10090.protein.links.v11.0.txt",
+# Loading in mus musculus PPIN from String v11.0... can be downloaded from STRING website, but make sure you're on the right version
+ppi = data.table::fread(file = "10090.protein.links.v11.0.txt",
                         header = TRUE, sep = " ") %>%
   dplyr::filter(combined_score >= 800) %>%
   dplyr::mutate(protein1 = do.call(c, lapply(strsplit(protein1, "\\."), function(x) x[2])),
@@ -127,13 +127,16 @@ mapping = mapping %>%
 # Keeping only proteins that map to a gene in the experiment
 ppi = ppi[ppi[,1] %in% mapping$ensembl_peptide_id & ppi[,2] %in% mapping$ensembl_peptide_id,]
 
-# Getting largest connected component of PPIN as an igraph object with vertex attribute "ECI"
+# Getting largest connected component of PPIN as an igraph object
 g = igraph::graph_from_edgelist(as.matrix(ppi[,1:2]), directed = FALSE)
 igraph::E(g)$weight = as.numeric(ppi[,3])
 igraph::V(g)$symbol = mapping$mgi_symbol[match(V(g)$name, mapping$ensembl_peptide_id)]
 l = igraph::decompose(g)
 glut4_graph = l[[which.max(do.call(c, lapply(l, igraph::vcount)))]]
+
+# Setting vertex attribute ECI and logFC (logFC for KO vs. Ctrl)
 igraph::V(glut4_graph)$ECI = dat$ECI[match(igraph::V(glut4_graph)$symbol, row.names(dat))]
+igraph::V(glut4_graph)$logFC = datFC$logFC[match(igraph::V(glut4_graph)$symbol, row.names(datFC))]
 
 # Running the Louvain clusering algorithm to get a graph that is more manageable and quicker to run for examples
 glut4_clusters = igraph::cluster_louvain(glut4_graph, weights = NULL)
@@ -144,9 +147,10 @@ glut4_graph = igraph::induced_subgraph(glut4_graph, glut4_clusters$membership ==
 # Getting adjacency matrix from graph
 glut4_adjM = igraph::as_adjacency_matrix(glut4_graph, attr = "weight", sparse = T)
 
-# Creating vector of gene-wise experimental scores, in this case the ECI values
+# Creating vector of gene-wise experimental scores
 eci_scores = igraph::V(glut4_graph)$ECI
+logFC_KO = igraph::V(glut4_graph)$logFC
 
 # write to package
-usethis::use_data(glut4_graph, glut4_adjM, eci_scores, overwrite = TRUE)
+usethis::use_data(glut4_graph, glut4_adjM, eci_scores, logFC_KO, overwrite = TRUE)
 
