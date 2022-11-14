@@ -7,49 +7,50 @@
 
 <!-- badges: end -->
 
-The goal of AMEND is to …
+AMEND (Active Module identification using Experimental data and Network
+Diffusion) is an algorithm designed to find a subset of connected nodes
+in a molecular interaction network that have large experimental values.
+It makes use of random walk with restart (RWR) to create node weights,
+and a heuristic approach for solving the Maximum-weight Connected
+Subgraph problem using these weights. This is performed iteratively
+until an optimal subnetwork (i.e., module) is found.
+
+For example, a user could have log2 fold changes from a differential
+expression analysis of RNA-seq data comparing a treatment group to a
+control group. Genes included in the experiment can be mapped to a
+protein-protein interaction network, along with their log2 fold changes.
+This network is the main input into AMEND, from which a single module is
+returned.
 
 ## Installation
 
-You can install the released version of AMEND from
-[CRAN](https://CRAN.R-project.org) with:
+You can install AMEND from [GitHub](https://github.com/samboyd0/AMEND)
+with:
 
 ``` r
-install.packages("AMEND")
+devtools::install_github("samboyd0/AMEND", build_vignettes = TRUE)
 ```
 
-## Example
+## Vignette
 
-This is a basic example which shows you how to solve a common problem:
+A vignette is available that illustrates how to use AMEND. It can be
+accessed with the following
+code.
 
 ``` r
-library(AMEND)
-## basic example code
+vignette(package = "AMEND")
 ```
 
-What is special about using `README.Rmd` instead of just `README.md`?
-You can include R chunks like so:
+<!-- ## Example -->
 
-``` r
-summary(cars)
-#>      speed           dist       
-#>  Min.   : 4.0   Min.   :  2.00  
-#>  1st Qu.:12.0   1st Qu.: 26.00  
-#>  Median :15.0   Median : 36.00  
-#>  Mean   :15.4   Mean   : 42.98  
-#>  3rd Qu.:19.0   3rd Qu.: 56.00  
-#>  Max.   :25.0   Max.   :120.00
-```
+<!-- AMEND contains three objects -->
 
-You’ll still need to render `README.Rmd` regularly, to keep `README.md`
-up-to-date. `devtools::build_readme()` is handy for this. You could also
-use GitHub Actions to re-render `README.Rmd` every time you push. An
-example workflow can be found here:
-<https://github.com/r-lib/actions/tree/master/examples>.
+<!-- ```{r example} -->
 
-You can also embed plots, for example:
+<!-- library(AMEND) -->
 
-<img src="man/figures/README-pressure-1.png" width="100%" />
+<!-- ``` -->
 
-In that case, don’t forget to commit and push the resulting figure
-files, so they display on GitHub and CRAN.
+<!-- You'll still need to render `README.Rmd` regularly, to keep `README.md` up-to-date. `devtools::build_readme()` is handy for this. You could also use GitHub Actions to re-render `README.Rmd` every time you push. An example workflow can be found here: <https://github.com/r-lib/actions/tree/master/examples>. -->
+
+<!-- In that case, don't forget to commit and push the resulting figure files, so they display on GitHub and CRAN. -->
