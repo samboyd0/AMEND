@@ -72,6 +72,8 @@ run_AMEND = function(graph, n = 25, eta = NULL, data.type = c("ECI", "logFC", "p
                           eci.direction = c("positive", "negative"), logFC.direction = c("positive", "negative", "both"),
                           adj_matrix = NULL, node_scores = NULL, normalize = c("core", "degree"), seed.weight = 0.5,
                           max_it = 3, n_particles = 3, random_seed = NULL, verbose = F){
+  start_time <- Sys.time()
+
   data.type <- match.arg(data.type)
   eci.direction <- match.arg(eci.direction)
   logFC.direction <- match.arg(logFC.direction)
@@ -92,11 +94,15 @@ run_AMEND = function(graph, n = 25, eta = NULL, data.type = c("ECI", "logFC", "p
   subnet = amend(eta = e, graph = graph, n = n, data.type = data.type,
                  eci.direction = eci.direction, logFC.direction = logFC.direction, adj_matrix = adj_matrix,
                  node_scores = node_scores, normalize = normalize, seed.weight = seed.weight, eta.search = FALSE, verbose = verbose)
+
+  end_time <- Sys.time()
+  run_time <- end_time - start_time
+  subnet$time <- run_time
   return(subnet)
 }
 # EDIT 11/1: added examples, added details
 # EDIT 11/4: changed random_seed argument and implementation
-
+# EDIT 11/11: Corrected the runtime calculation
 
 #' @title Identify active modules from an interaction network
 #'
@@ -145,7 +151,6 @@ run_AMEND = function(graph, n = 25, eta = NULL, data.type = c("ECI", "logFC", "p
 #'                 data.type = "ECI", eci.direction = "negative", verbose = TRUE)
 #' }
 #'
-#' @export
 amend <- function(eta, graph, n = 25, data.type = c("ECI", "logFC", "p_val"),
                   eci.direction = c("positive", "negative"), logFC.direction = c("positive", "negative", "both"),
                   adj_matrix = NULL, node_scores = NULL, normalize = c("core", "degree"), eta.search = FALSE,
