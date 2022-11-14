@@ -13,11 +13,11 @@ run_AMEND(
   logFC.direction = c("positive", "negative", "both"),
   adj_matrix = NULL,
   node_scores = NULL,
-  normalize = c("core", "degree", "weight"),
+  normalize = c("core", "degree"),
   seed.weight = 0.5,
   max_it = 3,
   n_particles = 3,
-  random_seed = 1,
+  random_seed = NULL,
   verbose = F
 )
 }
@@ -26,7 +26,7 @@ run_AMEND(
 
 \item{n}{(integer): approximate size of the final module. Used for setting the filtering rate schedule}
 
-\item{eta}{(numeric): starting filtering rate. If NULL, determines optimal value through PSO}
+\item{eta}{(numeric): starting filtering rate. If NULL (default), determines optimal value through PSO}
 
 \item{data.type}{(character): one of ECI, logFC, or p_val. If graph is specified, must have matching vertex attribute}
 
@@ -46,7 +46,7 @@ run_AMEND(
 
 \item{n_particles}{(integer): number of particles for PSO}
 
-\item{random_seed}{(integer): random seed}
+\item{random_seed}{(integer): random seed. If NULL (default), no seed is set by the user}
 
 \item{verbose}{(logical): Whether to output current iteration number to show progress}
 }
@@ -62,12 +62,20 @@ a named list with the following elements:
 }
 }
 \description{
-\code{run_AMEND()} performs all steps of the AMEND workflow, including setting the starting filtering rate through PSO and identifying an 'active' module
+\code{run_AMEND()} performs all steps of the AMEND workflow, including setting the starting filtering rate through PSO and identifying an 'active' module.
 }
 \details{
 AMEND is an active module identification method. An active module is a subset of connected nodes in an interaction network that have relatively large experimental values.
-AMEND takes as input a protein-protein interaction (PPI) network and node-wise summaries of experimental data (e.g., log fold change from a RNA-seq differential expression analysis). It returns a single connected subnetwork (i.e., module)
-See \url{/link/to/paper}
+AMEND takes as input a protein-protein interaction (PPI) network and node-wise summaries of experimental data (e.g., log fold change from a RNA-seq differential expression analysis). It returns a single connected subnetwork (i.e., module).
+
+The final module is found in an iterative manner by applying random walk with restart (RWR) on the network to get node weights, which are then shifted by a certain quantile of the RWR weights (termed the filtering rate) so that there are both negative and positive values.
+These shifted RWR weights are used to find the maximum-weight connected subgraph. This new subgraph is input into RWR again and the process repeats until there is no change between iterations. The subnetwork with largest score is returned as the final module.
+
+The filtering rate changes at each iteration following an exponential decay schedule, with the starting filtering rate determined by particle swarm optimization (PSO).
+
+The network score is the product of the average standardized experimental values and the average core-clustering coefficient of the nodes in the network. The experimental values (e.g., log fold changes) are standardized w.r.t. the entire dataset.
+
+See \url{/link/to/paper}.
 }
 \examples{
 # Attach igraph library

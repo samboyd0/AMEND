@@ -13,7 +13,7 @@ amend(
   logFC.direction = c("positive", "negative", "both"),
   adj_matrix = NULL,
   node_scores = NULL,
-  normalize = c("core", "degree", "weight"),
+  normalize = c("core", "degree"),
   eta.search = FALSE,
   seed.weight = 0.5,
   verbose = F
@@ -56,10 +56,10 @@ a named list with the following elements:
 }
 }
 \description{
-Identifies active modules, i.e., subnetworks with large experimental values, by iteratively applying random walk with restart and a heurstic solution to the maximum-weight connected subgraph problem.
+Identifies an active module, i.e., subnetwork with large experimental values, by iteratively applying random walk with restart and a heurstic solution to the maximum-weight connected subgraph problem.
 }
 \details{
-See \url{link/to/paper}
+See \code{run_AMEND()} and \url{link/to/paper}.
 }
 \examples{
 # Attach igraph library

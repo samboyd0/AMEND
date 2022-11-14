@@ -2,9 +2,9 @@
 % Please edit documentation in R/main.R
 \name{norm.adj}
 \alias{norm.adj}
-\title{Function for normalizing the adjacency matrix of a graph for input into random walk with restart (RWR)}
+\title{Nnormalize the adjacency matrix of a graph}
 \usage{
-norm.adj(g, adjM, norm = c("core", "degree", "weight"))
+norm.adj(g, adjM, norm = c("core", "degree"))
 }
 \arguments{
 \item{g}{(igraph object): input graph}
@@ -17,22 +17,27 @@ norm.adj(g, adjM, norm = c("core", "degree", "weight"))
 normalized adjacency matrix
 }
 \description{
-text
+\code{norm.adj()} normalizes the adjacency matrix of a graph for input into random walk with restart (RWR).
 }
 \details{
-text
+There are two normalization schemes available.
+\itemize{
+\item core: uses the concept of node coreness. Details can be found in \url{https://academic.oup.com/nar/article/48/17/e98/5879427}
+\item degree: divides each column of the adjacency matrix by the column total
+}
 }
 \examples{
 library(igraph)
 
+# Creating an adjacency matrix and graph
 adjm = matrix(c(0, 1, 0, 0, 0, 0, 0, 0,
-0, 0, 1, 1, 1, 0, 0, 0,
-0, 0, 0, 0, 1, 1, 0, 0,
-0, 0, 0, 0, 0, 0, 1, 0,
-0, 0, 0, 0, 0, 0, 1, 1,
-0, 0, 0, 0, 0, 0, 0, 0,
-0, 0, 0, 0, 0, 0, 0, 0,
-0, 0, 0, 0, 0, 0, 0, 0), nrow = 8)
+               1, 0, 1, 1, 1, 0, 0, 0,
+               0, 1, 0, 0, 1, 1, 0, 0,
+               0, 1, 0, 0, 0, 0, 1, 0,
+               0, 1, 1, 0, 0, 0, 1, 1,
+               0, 0, 1, 0, 0, 0, 0, 0,
+               0, 0, 0, 1, 1, 0, 0, 0,
+               0, 0, 0, 0, 1, 0, 0, 0), nrow = 8)
 g = graph_from_adjacency_matrix(adjm, mode = 'undirected')
 
 adj_norm = AMEND:::norm.adj(g, adjm)

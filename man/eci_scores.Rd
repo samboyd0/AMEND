@@ -5,7 +5,7 @@
 \alias{eci_scores}
 \title{ECI scores for proteins in the PPI network}
 \format{
-An object of class \code{numeric} of length 1099.
+An object of class \code{numeric} of length 916.
 }
 \source{
 \url{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE35378}, \url{https://version-11-0b.string-db.org/cgi/download?sessionId=\%24input-\%3E\%7BsessionId\%7D&species_text=Mus+musculus}

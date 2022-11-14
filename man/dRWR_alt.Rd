@@ -2,7 +2,7 @@
 % Please edit documentation in R/main.R
 \name{dRWR_alt}
 \alias{dRWR_alt}
-\title{Random walk with restart (RWR) procedure.}
+\title{Random walk with restart (RWR) procedure}
 \usage{
 dRWR_alt(g, nadjM, setSeeds = NULL, restart = 0.75)
 }
@@ -19,30 +19,30 @@ dRWR_alt(g, nadjM, setSeeds = NULL, restart = 0.75)
 vector of propagation scores from RWR
 }
 \description{
-text
-}
-\details{
-text
+\code{dRWR_alt()} implements the RWR procedure. This simulates random walkers on a graph, with a certain probability of returning to the seeds nodes.
 }
 \note{
-Adapted from the dnet package
+Adapted from the \emph{dnet} package
 }
 \examples{
 library(igraph)
 
+# Creating an adjacency matrix and graph
 adjm = matrix(c(0, 1, 0, 0, 0, 0, 0, 0,
-0, 0, 1, 1, 1, 0, 0, 0,
-0, 0, 0, 0, 1, 1, 0, 0,
-0, 0, 0, 0, 0, 0, 1, 0,
-0, 0, 0, 0, 0, 0, 1, 1,
-0, 0, 0, 0, 0, 0, 0, 0,
-0, 0, 0, 0, 0, 0, 0, 0,
-0, 0, 0, 0, 0, 0, 0, 0), nrow = 8)
+               1, 0, 1, 1, 1, 0, 0, 0,
+               0, 1, 0, 0, 1, 1, 0, 0,
+               0, 1, 0, 0, 0, 0, 1, 0,
+               0, 1, 1, 0, 0, 0, 1, 1,
+               0, 0, 1, 0, 0, 0, 0, 0,
+               0, 0, 0, 1, 1, 0, 0, 0,
+               0, 0, 0, 0, 1, 0, 0, 0), nrow = 8)
 g = graph_from_adjacency_matrix(adjm, mode = 'undirected')
 V(g)$name = 1:8
 
-m = adjm \%*\% diag(degree(g))
-adj_norm =  m \%*\% diag(1 / ifelse(colSums(m) == 0, 1, colSums(m)))
+# Normalizing the adjacency matrix
+adj_norm = adjm \%*\% diag(1 / degree(g))
+
+# Creating a named vector of seed values
 seeds = runif(8)
 names(seeds) = 1:8
 

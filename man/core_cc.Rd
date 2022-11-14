@@ -2,21 +2,21 @@
 % Please edit documentation in R/main.R
 \name{core_cc}
 \alias{core_cc}
-\title{Function for calculating the core-clustering coefficients of a graph}
+\title{Calculate the core-clustering coefficients of a graph}
 \usage{
 core_cc(g)
 }
 \arguments{
-\item{g}{(igraph object): input graph. must be connected}
+\item{g}{(igraph object): input graph. Must be connected}
 }
 \value{
-vector of core-clustering coefficients for each node
+Vector of core-clustering coefficients for each node
 }
 \description{
-text
+\code{core_cc()} calculates the core-clustering coefficients of all nodes in a graph. This network concept was introduced by Bader and Hogue (2003)
 }
 \details{
-text
+The core-clustering coefficient of a node is the density of the maximum k-core of the immediate neighborhood of that node. The k-core of a graph is the maximal subgraph in which every node has degree >= k.
 }
 \examples{
 core_clust_coefs = AMEND:::core_cc(glut4_graph)

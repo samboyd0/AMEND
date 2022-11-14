@@ -27,7 +27,7 @@ data_preprocessing(
 igraph object with 'seeds' and 'Z' vertex attributes
 }
 \description{
-Pre-processing of experimental data for input into AMEND and RWR. For use inside \code{amend()} and \code{run_AMEND()}
+Pre-processing of experimental data for input into AMEND and RWR. For use inside \code{amend()} and \code{run_AMEND()}.
 }
 \details{
 Transforms experimental data for use with Random walk with restart (RWR), which requires non-negative seed values with at least one non-zero element. For subnetwork scoring, the experimental scores need to be standardized w.r.t. all nodes in the input network.

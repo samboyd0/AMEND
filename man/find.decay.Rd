@@ -20,9 +20,6 @@ decay value, numeric
 Finds the max decay value for an exponential filtering rate schedule that will
 allow the algorithm to arrive at a graph of size n.
 }
-\details{
-text
-}
 \examples{
 d = AMEND:::find.decay(N = 1000, eta0 = 0.5, n = 50)
 d

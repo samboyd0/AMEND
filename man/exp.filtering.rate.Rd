@@ -2,7 +2,7 @@
 % Please edit documentation in R/main.R
 \name{exp.filtering.rate}
 \alias{exp.filtering.rate}
-\title{Exponential schedule for filtering rate}
+\title{Exponential decay schedule for filtering rate}
 \usage{
 \method{exp}{filtering.rate}(eta0 = 0.5, d = 0.1)
 }
@@ -15,10 +15,7 @@
 vector of filtering rates for each iteration of AMEND
 }
 \description{
-text
-}
-\details{
-text
+Exponential decay schedule for filtering rate. Used to shift the raw RWR scores
 }
 \examples{
 rates = AMEND:::exp.filtering.rate(eta0 = 0.5, d = 0.2)

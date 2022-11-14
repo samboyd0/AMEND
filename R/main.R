@@ -462,6 +462,9 @@ smart.restart.grid.search <- function(g.min, g.max, n.1, levels = 3, ig, n.adj.M
 
       mCC = sum(core_cc(nets[[i]])) / n.v
 
+      # To prevent filtering out too many nodes at one iteration
+      if((vcount(ig) - n.v) / vcount(ig) - filtering_rate >= 0.5) next
+
       score_metrics[i,] <- c(mCC, mZ, n.v)
     }
 
@@ -500,7 +503,8 @@ smart.restart.grid.search <- function(g.min, g.max, n.1, levels = 3, ig, n.adj.M
 
   return(list(new.g, new.scores, best.r[n]))
 }
-# EDIT 1/11: added examples, added details
+# EDIT 11/1: added examples, added details
+# EDIT 11/14: Prevent overfiltering
 
 
 #' @title Nnormalize the adjacency matrix of a graph

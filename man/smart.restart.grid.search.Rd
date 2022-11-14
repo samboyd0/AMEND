@@ -39,24 +39,27 @@ a list containing an igraph object, subnetwork score, and restart value
 Grid search for the restart parameter in RWR. For use inside \code{amend()} and \code{run_AMEND()}
 }
 \details{
-text
+This is a multi-level grid search. The first level is simply a grid search. For the subsequent levels, the neighborhood about the optimal grid value from the previous level is searched. Stops when no improvement in network score or maximum number of levels is reached.
 }
 \examples{
 library(igraph)
 
+# Creating an adjacency matrix and graph
 adjm = matrix(c(0, 1, 0, 0, 0, 0, 0, 0,
-0, 0, 1, 1, 1, 0, 0, 0,
-0, 0, 0, 0, 1, 1, 0, 0,
-0, 0, 0, 0, 0, 0, 1, 0,
-0, 0, 0, 0, 0, 0, 1, 1,
-0, 0, 0, 0, 0, 0, 0, 0,
-0, 0, 0, 0, 0, 0, 0, 0,
-0, 0, 0, 0, 0, 0, 0, 0), nrow = 8)
+               1, 0, 1, 1, 1, 0, 0, 0,
+               0, 1, 0, 0, 1, 1, 0, 0,
+               0, 1, 0, 0, 0, 0, 1, 0,
+               0, 1, 1, 0, 0, 0, 1, 1,
+               0, 0, 1, 0, 0, 0, 0, 0,
+               0, 0, 0, 1, 1, 0, 0, 0,
+               0, 0, 0, 0, 1, 0, 0, 0), nrow = 8)
 g = graph_from_adjacency_matrix(adjm, mode = 'undirected')
 V(g)$name = 1:8
 
-m = adjm \%*\% diag(degree(g))
-adj_norm =  m \%*\% diag(1 / ifelse(colSums(m) == 0, 1, colSums(m)))
+# Normalizing the adjacency matrix
+adj_norm = adjm \%*\% diag(1 / degree(g))
+
+# Creating a named vector of seed values
 seeds = runif(8)
 names(seeds) = 1:8
 
