@@ -38,7 +38,7 @@ accessed with the following
 code.
 
 ``` r
-vignette(package = "AMEND")
+vignette("amend_vignette", package = "AMEND")
 ```
 
 <!-- ## Example -->
