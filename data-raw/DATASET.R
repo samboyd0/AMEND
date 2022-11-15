@@ -78,6 +78,7 @@ names(dat) <- c("Gene", "ECI")
 row.names(dat) <- dat$Gene
 dat <- dat %>% dplyr::select(-Gene)
 
+# Aggregate probes... take median logFC if multiple probes map to same gene
 datFC <- aggregate(datFC, by = list(genes), FUN = median)
 names(datFC) <- c("Gene", "logFC")
 row.names(datFC) <- datFC$Gene
@@ -107,7 +108,8 @@ remove_duplicate_edges = function(x){
 }
 
 # Loading in mus musculus PPIN from String v11.0... can be downloaded from STRING website, but make sure you're on the right version
-ppi = data.table::fread(file = "10090.protein.links.v11.0.txt",
+file_path = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt"
+ppi = data.table::fread(file = file_path,
                         header = TRUE, sep = " ") %>%
   dplyr::filter(combined_score >= 800) %>%
   dplyr::mutate(protein1 = do.call(c, lapply(strsplit(protein1, "\\."), function(x) x[2])),

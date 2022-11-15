@@ -2,3 +2,5 @@
 .Rhistory
 .DS_store
 README.Rmd
+inst/doc
+AMEND.Rproj
