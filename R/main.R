@@ -1,42 +1,41 @@
 #' @importFrom igraph vcount V V<- E E<- vertex_attr vertex_attr<-
 #' @importFrom stats sd quantile
 
-#' @title Pipeline for AMEND workflow
+#' @title Identify active modules from an interaction network
 #'
-#' @description `run_AMEND()` performs all steps of the AMEND workflow, including setting the starting filtering rate through PSO and identifying an 'active' module.
+#' @description Identifies an active module, i.e., subnetwork with large experimental values, thorugh an iterative optimization procedure.
 #'
-#' @details AMEND is an active module identification method. An active module is a subset of connected nodes in an interaction network that have relatively large experimental values.
-#' AMEND takes as input a protein-protein interaction (PPI) network and node-wise summaries of experimental data (e.g., log fold change from a RNA-seq differential expression analysis). It returns a single connected subnetwork (i.e., module).
+#' @details
 #'
-#' The final module is found in an iterative manner by applying random walk with restart (RWR) on the network to get node weights, which are then shifted by a certain quantile of the RWR weights (termed the filtering rate) so that there are both negative and positive values.
-#' These shifted RWR weights are used to find the maximum-weight connected subgraph. This new subgraph is input into RWR again and the process repeats until there is no change between iterations. The subnetwork with largest score is returned as the final module.
+#' Given an interaction network and experimental scores, AMEND attempts to find an active module by iteratively applying random walk with restart (RWR) and a heurstic solution to a maximum-weight connected subgraph problem.
 #'
-#' The filtering rate changes at each iteration following an exponential decay schedule, with the starting filtering rate determined by particle swarm optimization (PSO).
+#' Briefly, RWR is applied to the network to get propagation scores which are shifted by some percentile (filtering rate, which decreases exponentially each iteration). The network with propagation scores are input into `heinz()`, an algorithm that heuristically finds a subnetwork with maximum node weight. This subnetwork is assigned a score based on its mean experimental values and mean core-clustering coefficients and then input into the next iteration. The algorithm stops when there is no change between iterations, and the subnetwork with maximum score is returned.
 #'
-#' The network score is the product of the average standardized experimental values and the average core-clustering coefficient of the nodes in the network. The experimental values (e.g., log fold changes) are standardized w.r.t. the entire dataset.
+#' This function can also accommodate heterogeneous networks with two node types. This information is incorporated in RWR for heterogeneous graphs (RWRH) proposed by [Li et al.](https://doi.org/10.1093/bioinformatics/btq108). This introduces the 'jump' and 'net1.weight' parameters.
 #'
-#' See \url{/link/to/paper}.
+#' Since RWR requires seed values between 0 and 1, node scores often need to be transformed. 'seed.scheme' is used when data.type=ECI. 'zero_bottom' gives ECI values of zero the lowest weight, regardless of DOI. 'zero_middle' linearly transforms ECI values s.t. values in DOI are largest, values _not_ in DOI are smallest, and ECIs of zero are in the middle.
 #'
-#' @param graph an igraph object with experimental data as vertex attribute. Either graph or adj_matrix and node_scores must be specified
-#' @param n (integer): approximate size of the final module. Used for setting the filtering rate schedule
-#' @param heterogeneous (logical): Is the input graph or adjacency matrix heterogeneous, i.e., contains more than one node type?
-#' @param data.type (character): one of ECI, logFC, or p_val. If graph is specified, must have matching vertex attribute
-#' @param eci.direction (character): direction of interest for ECI values. negative or positive
-#' @param logFC.direction (character): direction of interest for log fold change values. negative, positive, or both. When "both" is specified, the absolute value of logFC is taken
-#' @param adj_matrix (matrix): adjacency matrix of network. Either graph or adj_matrix and node_scores must be specified
-#' @param node_scores vector of node scores
-#' @param node_type vector of node types (required if heterogeneous = T)
-#' @param normalize (character): normalization scheme of adjacency matrix for random walk with restart
-#' @param seed.weight (numeric): Relative weight to give to nodes not in the direction of interest in random walk with restart, between 0 and 1
-#' @param seed.scheme (character): Scheme used for transforming experimental values into seed values for RWR
-#' @param max_it (integer): maximum number of iterations for PSO
-#' @param n_particles (integer): number of particles for PSO
-#' @param random_seed (integer): random seed. If NULL (default), no seed is set by the user
-#' @param ma_window (integer): Moving average window for setting the filtering rate schedule
-#' @param jump (numeric): Jumping parameter for RWR on heterogeneous networks
-#' @param net1.weight (numeric): Relative weight to give to network type 1 in RWR, where type 1 is the first type to appear in node_type (the vector _or_ vertex attr)
-#' @param eta (numeric): starting filtering rate. If NULL (default), determines optimal value through PSO
-#' @param verbose (logical): Whether to output current iteration number to show progress
+#' The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by applying a row-inflation then column-normalization operation on the transition matrix (assumed to be a left stochastic matrix).
+#'
+#' See \url{link/to/paper} for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
+#'
+#' @param graph igraph object with experimental data as vertex attribute. Either graph or adj_matrix and node_scores must be specified
+#' @param adj_matrix Adjacency matrix of network. Either graph or adj_matrix and node_scores must be specified. Must have either colnames or rownames
+#' @param node_scores Named vector of node scores
+#' @param node_type Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.
+#' @param n Approximate size of the final module
+#' @param data.type Type of input data. If graph is specified, must have matching vertex attribute
+#' @param DOI Direction of Interest for experimental values. One of negative, positive, or both. When "both" is specified, the absolute value is taken. Only relevant for data type ECI and logFC
+#' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute
+#' @param normalize Normalization scheme of adjacency matrix for random walk with restart
+#' @param eta Starting filtering rate. If NULL (default), a value is chosen based on the input network size and parameter 'n'
+#' @param seed.weight Relative weight to give to nodes not in the DOI in random walk with restart, between 0 and 1
+#' @param seed.scheme Determines how the feature-wise experimental values are transformed for use as seed values in RWR. See Details.
+#' @param jump Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE)
+#' @param net1.weight Relative weight to give to nodes of network 1 (the first type to appear in node_type).
+#' @param verbose Logical. Whether to output current iteration number to show progress
+#' @param degree.bias Logical. Whether to mitigate degree bias through inflation-normalization of transition matrix prior to RWR. Experimental. See Details
+#' @param identifier For use when performing many runs of AMEND to keep track of progress
 #'
 #' @return a named list with the following elements:
 #' * module: the final module (i.e., subnetwork)
@@ -56,161 +55,111 @@
 #' head(V(glut4_graph)$ECI)
 #'
 #' \dontrun{
-#' # Use run_AMEND() with an igraph object
-#' subnet1 = run_AMEND(graph = glut4_graph, data.type = "ECI", eci.direction = "negative",
-#'                     max_it = 1, n_particles = 1, verbose = TRUE)
+#' # Use run_AMEND() with an igraph object with a vertex attribute matching data.type arg
+#' subnet1 = run_AMEND(graph = glut4_graph, data.type = "ECI",
+#'                 DOI = "negative")
 #'
 #' # Use run_AMEND() with an adjacency matrix and a vector of node scores
-#' subnet2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, data.type = "ECI",
-#'                     eci.direction = "negative", max_it = 1, n_particles = 1, verbose = TRUE)
+#' subnet2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores,
+#'                 data.type = "ECI", DOI = "negative")
 #' }
 #'
 #' @export
-run_AMEND = function(graph = NULL, n = 25, heterogeneous = F, data.type = c("ECI", "logFC", "p_val"),
-                     eci.direction = c("positive", "negative"), logFC.direction = c("positive", "negative", "both"),
-                     adj_matrix = NULL, node_scores = NULL, node_type = NULL, normalize = c("core", "degree"),
-                     seed.weight = 0.5, seed.scheme = c("zero_bottom", "zero_middle"), max_it = 3, n_particles = 3,
-                     random_seed = NULL, ma_window = 5, jump = 0.5, net1.weight = 0.5, eta = NULL, verbose = F){
-  start_time <- Sys.time()
+run_AMEND <- function(graph = NULL, adj_matrix = NULL, node_scores = NULL, node_type = NULL, n = 25,
+                      data.type = c("ECI", "logFC", "p_val", "binary", "other"), DOI = c("positive", "negative", "both"), heterogeneous = FALSE,
+                      normalize = c("degree", "core"), eta = NULL,
+                      seed.weight = 0.5, seed.scheme = c("zero_bottom", "zero_middle"), jump = 0.5, net1.weight = 0.5,
+                      verbose = TRUE, degree.bias = FALSE, identifier = 1){
+  start_time = Sys.time()
 
-  data.type <- match.arg(data.type)
-  eci.direction <- match.arg(eci.direction)
-  logFC.direction <- match.arg(logFC.direction)
-  normalize <- match.arg(normalize)
-  seed.scheme = match.arg(seed.scheme)
+  # Function for setting the starting filtering rate
+  get.eta0 = function(g, n, method = c("difference", "ratio", "log.ratio")){
+    # eta is linearly increasing with D(N,n), where D is some distance metric between the input network size N and the final subnetwork size n
+    # D(N,n) = N - n; for method = "difference"
+    # D(N,n) = N / n; for method = "ratio"
+    # D(N,n) = log(N / n); for method = "log.ratio"
+    # Boundaries within which eta changes linearly with D(N,n)
+    # N: [500, 15000]
+    # n: [5, 200]
+    # eta: [0.3, 0.8]
+    eta.l = 0.3
+    eta.u = 0.8
+    N.l = 500
+    N.u = 15000
+    n.l = 5
+    n.u = 200
+    if(method == "difference"){
+      D.l = N.l - n.u
+      D.u = N.u - n.l
+      D = vcount(g) - n
+    }else if(method == "ratio"){
+      D.l = N.l / n.u
+      D.u = N.u / n.l
+      D = vcount(g) / n
+    }else if(method == "log.ratio"){
+      D.l = log(N.l / n.u)
+      D.u = log(N.u / n.l)
+      D = log(vcount(g) / n)
+    }else stop("method should be one of \'difference\', \'ratio\', or \'log.ratio\'")
+    # Getting slope and intercept
+    a = (eta.u - eta.l) / (D.u - D.l)
+    b = (eta.u * D.l - eta.l * D.u) / (D.l - D.u)
 
-  if(is.null(eta)){
-    if(!is.null(random_seed) & is.numeric(random_seed)) set.seed(random_seed)
+    a * D + b
+  }
 
-    eta.search = pso::psoptim(par = NA, fn = amend,  eta.search = TRUE, graph = graph, n = n, data.type = data.type,
-                              eci.direction = eci.direction, logFC.direction = logFC.direction,
-                              adj_matrix = adj_matrix, node_scores = node_scores, node_type = node_type, normalize = normalize, seed.weight = seed.weight,
-                              seed.scheme = seed.scheme, ma_window = ma_window, heterogeneous = heterogeneous, jump = jump, net1.weight = net1.weight, verbose = verbose,
-                              lower = 0.2, upper = 0.8,
-                              control = list(trace = 1, fnscale = -1, maxit = max_it, s = n_particles, w = 0.729, c.p = 1.49445, c.g = 1.49445, v.max = 0.5, type = "SPSO2011", trace.stats = TRUE))
-    e = eta.search$par
-  }else e = eta
+  # Variables not set by user, but could change in future
+  ma_window = 5 # Moving average window... set to Inf for a running average
 
-  # Running AMEND with final starting filtering rate (eta)
-  subnet = amend(eta = e, graph = graph, n = n, data.type = data.type, heterogeneous = heterogeneous,
-                 eci.direction = eci.direction, logFC.direction = logFC.direction, adj_matrix = adj_matrix,
-                 node_scores = node_scores, node_type = node_type, normalize = normalize, seed.weight = seed.weight,
-                 seed.scheme = seed.scheme, ma_window = ma_window, eta.search = FALSE, verbose = verbose,
-                 jump = jump, net1.weight = net1.weight)
-
-  end_time <- Sys.time()
-  run_time <- end_time - start_time
-  subnet$time <- run_time
-  return(subnet)
-}
-
-#' @title Identify active modules from an interaction network
-#'
-#' @description Identifies an active module, i.e., subnetwork with large experimental values, by iteratively applying random walk with restart and a heurstic solution to the maximum-weight connected subgraph problem.
-#'
-#' @details See `run_AMEND()` and \url{link/to/paper}.
-#'
-#' @param eta (numeric): starting filtering rate. If NULL (default), determines optimal value through PSO
-#' @param graph an igraph object with experimental data as vertex attribute. Either graph or adj_matrix and node_scores must be specified
-#' @param n (integer): approximate size of the final module. Used for setting the filtering rate schedule
-#' @param heterogeneous (logical): Is the input graph or adjacency matrix heterogeneous, i.e., contains more than one node type?
-#' @param data.type (character): one of ECI, logFC, or p_val. If graph is specified, must have matching vertex attribute
-#' @param eci.direction (character): direction of interest for ECI values. negative or positive
-#' @param logFC.direction (character): direction of interest for log fold change values. negative, positive, or both. When "both" is specified, the absolute value of logFC is taken
-#' @param adj_matrix (matrix): adjacency matrix of network. Either graph or adj_matrix and node_scores must be specified
-#' @param node_scores vector of node scores
-#' @param node_type vector of node types (required if heterogeneous = T)
-#' @param normalize (character): normalization scheme of adjacency matrix for random walk with restart
-#' @param eta.search (logical): Is the optimal starting filtering rate (eta) being searched for?
-#' @param seed.weight (numeric): Relative weight to give to nodes not in the direction of interest in random walk with restart, between 0 and 1
-#' @param seed.scheme (character): Scheme used for transforming experimental values into seed values for RWR
-#' @param ma_window (integer): Moving average window for setting the filtering rate schedule
-#' @param jump (numeric): Jumping parameter for RWR on heterogeneous networks
-#' @param net1.weight (numeric): Relative weight to give to network type 1 in RWR, where type 1 is the first type to appear in node_type (the vector _or_ vertex attr)
-#' @param verbose (logical): Whether to output current iteration number to show progress
-#'
-#' @return a named list with the following elements:
-#' * module: the final module (i.e., subnetwork)
-#' * score: final module score
-#' * subnetworks: a list of node names contained in intermediate subnetworks
-#' * stats: network statistics
-#' * time: run time
-#' * input_params: list of input parameters
-#'
-#' @examples
-#' # Attach igraph library
-#' library(igraph)
-#'
-#' # Inspect the igraph object included in AMEND package.
-#' # One can see it has vertex attributes name, symbol, and ECI
-#' glut4_graph
-#' head(V(glut4_graph)$ECI)
-#'
-#' \dontrun{
-#' # Use amend() with an igraph object with a vertex attribute matching data.type arg
-#' subnet1 = amend(graph = glut4_graph, eta = 0.6, data.type = "ECI",
-#'                 eci.direction = "negative", verbose = TRUE)
-#'
-#' # Use amend() with an adjacency matrix and a vector of node scores
-#' subnet2 = amend(adj_matrix = glut4_adjM, node_scores = eci_scores, eta = 0.6,
-#'                 data.type = "ECI", eci.direction = "negative", verbose = TRUE)
-#' }
-#'
-amend <- function(eta = NULL, graph = NULL, n = 25, heterogeneous = F, data.type = c("ECI", "logFC", "p_val"),
-                  eci.direction = c("positive", "negative"), logFC.direction = c("positive", "negative", "both"),
-                  adj_matrix = NULL, node_scores = NULL, node_type = NULL, normalize = c("core", "degree"), eta.search = FALSE,
-                  seed.weight = 0.5, seed.scheme = c("zero_bottom", "zero_middle"), ma_window = 5, jump = 0.5, net1.weight = 0.5, verbose = F){
-  start_time <- Sys.time()
-
-  data.type <- match.arg(data.type)
-  eci.direction <- match.arg(eci.direction)
-  logFC.direction <- match.arg(logFC.direction)
-  normalize <- match.arg(normalize)
+  data.type = match.arg(data.type)
+  DOI = match.arg(DOI)
+  normalize = match.arg(normalize)
   seed.scheme = match.arg(seed.scheme)
 
   # Ensuring adj_matrix is the correct class
   if(all(class(adj_matrix) != "matrix") && !is.null(adj_matrix)){
-    adj_matrix <- as.matrix(adj_matrix)
+    adj_matrix = as.matrix(adj_matrix)
   }
 
   # NB: If igraph object is given, we want to preserve any node/edge attrs it may have, so igraph takes priority over adj_matrix
   if(!is.null(graph)){
     # Check name attr
-    if(!"name" %in% igraph::vertex_attr_names(graph)) stop("Graph must have vertex attribute \'name\'.")
+    if(!"name" %in% igraph::vertex_attr_names(graph)) stop("No \'name\' vertex attribute.")
     # Check node scores
     if(!data.type %in% igraph::vertex_attr_names(graph)){
       if(is.null(node_scores)){
-        stop("Either an igraph with vertex attribute \'", data.type, "\', or a named vector of node scores must be given.")
+        stop("There is no vertex attribute \'", data.type, "\' or named vector of node scores. At least one must be given")
       }else{
-        if(is.null(names(node_scores))) stop("node_scores must be a named vector")
-        if(any(!V(graph)$name %in% names(node_scores))) stop("node_scores does not contain all nodes in graph.")
+        if(is.null(names(node_scores))) stop("node_scores is not a named vector")
+        if(any(!V(graph)$name %in% names(node_scores))) stop("node_scores does not contain all nodes in graph")
         ind = match(names(node_scores), V(graph)$name)
-        vertex_attr(graph, data.type, ind[!is.na(ind)]) <- node_scores[!is.na(ind)]
+        vertex_attr(graph, data.type, ind[!is.na(ind)]) = node_scores[!is.na(ind)]
       }
     }
     # Check node type
     if(heterogeneous){
       if(!"node_type" %in% igraph::vertex_attr_names(graph)){
         if(is.null(node_type)){
-          stop("Either an igraph with vertex attribute \'node_type\', or a named vector of node types must be given for heterogeneous graphs.")
+          stop("There is no vertex attribute \'node_type\' or named vector of node types. At least one must be given for heterogeneous graphs.")
         }else{
-          if(is.null(names(node_type))) stop("node_type must be a named vector")
+          if(is.null(names(node_type))) stop("node_type is not a named vector")
           if(any(!V(graph)$name %in% names(node_type))) stop("node_type does not contain all nodes in graph.")
           ind = match(names(node_type), V(graph)$name)
-          vertex_attr(graph, "node_type", ind[!is.na(ind)]) <- node_type[!is.na(ind)]
+          vertex_attr(graph, "node_type", ind[!is.na(ind)]) = node_type[!is.na(ind)]
         }
       }
+      if(length(unique(V(graph)$node_type)) > 2) stop("Number of unique node types is greater than 2. Currently, only heterogeneous graphs of two node types is supported.")
     }
     # Check edge weights... if igraph is given w/o edge attr, assume it is unweighted, even if a weighted adj matrix is given
     if(!"weight" %in% igraph::edge_attr_names(graph)) E(graph)$weight = 1
   }else if(is.null(adj_matrix) || is.null(node_scores)){
-    if(heterogeneous && is.null(node_types)){
-      stop("If an igraph is not given with the appropriate attributes, there must be inputs for adj_matrix, node_scores, and node_type (for heterogeneous graphs).")
-    }else stop("If an igraph is not given with the appropriate attributes, there must be inputs for adj_matrix and node_scores.")
+    if(heterogeneous && is.null(node_type)){
+      stop("No inputs for graph, adj_matrix, node_scores, or node_type (for heterogeneous graphs).")
+    }else stop("No inputs for graph, adj_matrix, or node_scores.")
   }else{
-    if(is.null(names(node_scores))) stop("node_scores must be a named vector.")
+    if(is.null(names(node_scores))) stop("node_scores is not a named vector.")
     if(is.null(rownames(adj_matrix)) && is.null(colnames(adj_matrix))){
-      stop("adj_matrix must have rownames and/or colnames.")
+      stop("adj_matrix does not have rownames or colnames. One of these must be present.")
     }else{
       if(is.null(rownames(adj_matrix))) rownames(adj_matrix) = colnames(adj_matrix)
       if(is.null(colnames(adj_matrix))) colnames(adj_matrix) = rownames(adj_matrix)
@@ -225,7 +174,9 @@ amend <- function(eta = NULL, graph = NULL, n = 25, heterogeneous = F, data.type
     graph = igraph::set_vertex_attr(graph = graph, name = data.type, value = node_scores)
     # Matching node_type to order of rows in adj_matrix
     if(heterogeneous){
-      if(is.null(node_type) || is.null(names(node_type))) stop("A named vector is required for node_type when heterogeneous = T.")
+      if(is.null(node_type)){
+        stop("node_type is not given.")
+      }else if(is.null(names(node_type))) stop("node_type is not a named vector.")
       if(any(!rownames(adj_matrix) %in% names(node_type))) stop("node_type does not contain all nodes in adj_matrix.")
       ind = match(names(node_type), rownames(adj_matrix))
       node_type = node_type[!is.na(ind)] # removes elements that didn't map
@@ -234,170 +185,151 @@ amend <- function(eta = NULL, graph = NULL, n = 25, heterogeneous = F, data.type
       if(length(unique(node_type)) > 2) stop("Number of unique node types is greater than 2. Currently, only heterogeneous graphs of two node types is supported.")
     }
   }
-  # Get vertex sequence in graph st all nodes of a given type are grouped together
+  # At this point, evrything is in 'graph',
+  # so the goal here is to get vertex sequence in graph s.t. all nodes of a given type are grouped together
   if(heterogeneous){
     nt = unique(V(graph)$node_type)
     p = Matrix::invPerm(c(which(V(graph)$node_type == nt[1]), which(V(graph)$node_type == nt[2])))
     graph = igraph::permute(graph, p)
   }
   # Transforming input data
-  graph = data_preprocessing(graph, data.type, eci.direction, logFC.direction, seed.weight, seed.scheme, heterogeneous)
+  graph = data_preprocessing(graph, data.type, DOI, seed.weight, seed.scheme, heterogeneous)
 
-  if(eta.search) message(paste('Starting filtering rate:', round(eta, 4)))
-
-  all_scores <- list()
-  all_nets <- list()
-
-  sn_score <- c(-Inf, 0)
-  subg <- vector(mode = "list", length = 2)
-  subg[[1]] <- graph
-  k <- 1
-
-  avg.rd = 0.07
   repeat{
-    if(verbose) message(paste("Iteration:", k))
-    if(k == 1){
-      rate.difference = avg.rd
-      e = eta
-      d.graph = subg[[1]]
+    all_scores <- list()
+    all_nets <- list()
 
-      adj_og <- igraph::as_adjacency_matrix(subg[[1]], type = "both", attr = "weight", sparse = T)
-      adj <- adj_og
-    }else{
-      rate.difference = c(avg.rd, do.call(c, lapply(all_scores, function(x) x[10] - x[9])))
-      rate.difference = rate.difference[ifelse(length(rate.difference) >= ma_window, length(rate.difference) - ma_window + 1, 1):length(rate.difference)]
-      e = all_scores[[k-1]][9]
+    subg <- vector(mode = "list", length = 2)
+    subg[[1]] <- graph
+    k <- 1
 
-      if(k == 2){
-        d.graph = graph
-      }else d.graph = all_nets[[k-2]]
+    avg.rd = 0.07 # initial average rate difference
 
-      adj <- adj[-rm.id, -rm.id]
-    }
-    # Setting shifting percentile (i.e., filtering rate) for this iteration
-    decay <- find.decay(N = vcount(d.graph), eta0 = e, n = n, rate.diff = rate.difference)
-    l <- exp.filtering.rate(eta0 = e, d = decay)
-    ll <- l[ifelse(k == 1, 1, 2)]
+    if(is.null(eta)) eta = get.eta0(graph, n, "log.ratio")
 
-    # Determining whether graph is still heterogeneous, as all of one node type may have been filtered out
-    if(heterogeneous){
-      if(length(unique(V(subg[[1]])$node_type)) < 2){
-        if(verbose) message(paste0("All nodes of type \'", setdiff(nt, unique(V(subg[[1]])$node_type)), "\' have been filtered out."))
-        heterogeneous = FALSE
+    if(verbose) message(paste("Starting filtering rate:", round(eta, 4)))
+    repeat{
+      if(verbose) message(paste("Iteration:", k))
+      if(k == 1){
+        rate.difference = avg.rd
+        e = eta
+        decay.N = vcount(graph)
+
+        adj_og <- igraph::as_adjacency_matrix(subg[[1]], type = "both", attr = "weight", sparse = T)
+        adj <- adj_og
+      }else{
+        rate.difference = c(avg.rd, do.call(c, lapply(all_scores, function(x) x[10] - x[9])))
+        rate.difference = rate.difference[ifelse(length(rate.difference) >= ma_window, length(rate.difference) - ma_window + 1, 1):length(rate.difference)]
+        e = all_scores[[k-1]][9]
+
+        if(k == 2){
+          decay.N = vcount(graph)
+        }else decay.N = length(all_nets[[k-2]])
+
+        adj <- adj[-rm.id, -rm.id]
       }
+      # Setting shifting percentile (i.e., filtering rate) for this iteration
+      decay <- find_decay(N = decay.N, eta0 = e, n = n, rate.diff = rate.difference)
+      l <- exp_filtering_rate(eta0 = e, d = decay)
+      ll <- l[ifelse(k == 1, 1, 2)]
+
+      # Determining whether graph is still heterogeneous, b/c all of one node type may have been filtered out
+      if(heterogeneous){
+        if(length(unique(V(subg[[1]])$node_type)) < 2){
+          heterogeneous = FALSE
+          if(verbose) message(paste0("All nodes of type \'", setdiff(nt, unique(V(subg[[1]])$node_type)), "\' have been filtered out."))
+        }
+      }
+      # Normalize adjacency matrix to get transition matrix
+      n.adjM <- transition_matrix(g = subg[[1]], adjM = adj, norm = normalize, heterogeneous = heterogeneous, node_type = V(subg[[1]])$node_type, jump = jump)
+
+      # Perform inflation/normalization to mitigate degree bias, if specified
+      if(degree.bias) n.adjM = inflate_normalize(nadjM = n.adjM)
+
+      # Create matrix of seed values
+      Seeds <- matrix(V(subg[[1]])$seeds, ncol = 1, dimnames = list(V(subg[[1]])$name))
+
+      # Choosing Restart parameter value through a 'normal' grid search
+      rgs <- restart_grid_search(subg[[1]], n.adjM, Seeds, ll, heterogeneous, V(subg[[1]])$node_type, net1.weight, k)
+      subg[[2]] <- rgs[[1]]
+
+      # break out of repeat loop if there is no change in network or if subnet size <= 2
+      if(vcount(subg[[2]]) == vcount(subg[[1]]) || vcount(subg[[2]]) <= 2) break
+
+      mCC <- rgs[[2]][1] # Mean core-clustering coefficient
+      mZ <- rgs[[2]][2] # Mean standardized experimental scores
+      n_nodes <- rgs[[2]][3] # Size of subnetwork
+
+      sn_score <- mCC * mZ # subnetwork score
+
+      all_scores[[length(all_scores) + 1]] <- c(decay, rgs[[3]], sn_score, mZ, mCC, n_nodes, igraph::ecount(subg[[2]]), igraph::edge_density(subg[[2]]), ll, mean(!V(subg[[1]])$name %in% V(subg[[2]])$name))
+      all_nets[[length(all_nets) + 1]] = V(subg[[2]])$name
+
+      # IDs of nodes that were removed this iteration
+      rm.id <- which(!V(subg[[1]])$name %in% V(subg[[2]])$name)
+
+      k <- k + 1
+      subg[[1]] <- subg[[2]]
     }
-    # Normalize adjacency matrix
-    n.adjM <- norm.adj(g = subg[[1]], adjM = adj, norm = normalize, heterogeneous = heterogeneous, node_type = V(subg[[1]])$node_type, jump = jump)
 
-    Seeds <- data.frame(Experimental.values = V(subg[[1]])$seeds, row.names = V(subg[[1]])$name)
+    all_scores <- do.call("rbind", all_scores)
+    colnames(all_scores) <- c("Decay", "Restart parameter", "Network score", "Avg Z", "Avg CCC", "Nodes", "Edges", "Density",
+                              "Filtering rate", "Observed filtering rate")
+    all_scores <- round(as.data.frame(all_scores), 3)
 
-    # Choosing Restart parameter value through multi-level grid search
-    # The search space changes depending on size of network
-    if(k == 1){
-      r = 0.99
-
-      PTmatrix2 <- RWR(nadjM = n.adjM, setSeeds = Seeds, restart = r, heterogeneous = heterogeneous, node_type = V(subg[[1]])$node_type, net1.weight = net1.weight)
-      rwr_res <- as.vector(PTmatrix2)
-
-      # Scores for Maximum Scoring Subgraph Algorithm
-      rwr_score <- rwr_res - quantile(rwr_res, ll)
-      score <- rwr_score
-      names(score) <- V(subg[[1]])$name
-
-      subg[[2]] <- dNetFind_alt(subg[[1]], score)
-      n.v <- vcount(subg[[2]])
-      mZ <- sum(V(subg[[2]])$Z) / n.v
-      mCC = sum(core_cc(subg[[2]])) / n.v
-      score_metrics <- matrix(c(mCC, mZ, n.v), nrow = 1, ncol = 3)
-      max.id <- 1
-    }else if(vcount(subg[[1]]) >= 1000){
-      srgs <- smart.restart.grid.search(0.7, 0.99, 10, 3, subg[[1]], n.adjM, Seeds, ll, heterogeneous, V(subg[[1]])$node_type, net1.weight)
-      subg[[2]] <- srgs[[1]]
-      score_metrics <- matrix(srgs[[2]], nrow = 1, ncol = 3)
-      r <- srgs[[3]]
-      max.id <- 1
+    # final module cannot be larger than twice the user-specified 'n'
+    size.cond = all_scores[,6] <= 2 * n
+    if(any(size.cond)){
+      break
     }else{
-      srgs <- smart.restart.grid.search(0.2, 0.99, 18, 3, subg[[1]], n.adjM, Seeds, ll, heterogeneous, V(subg[[1]])$node_type, net1.weight)
-      subg[[2]] <- srgs[[1]]
-      score_metrics <- matrix(srgs[[2]], nrow = 1, ncol = 3)
-      r <- srgs[[3]]
-      max.id <- 1
+      if(verbose) message(paste0("Algorithm didn't converge with eta=", round(eta, 4), ". Trying a larger eta value. ID=", identifier))
+      eta = eta * 1.1 # increase by 10%
     }
-    # break out of repeat loop if there is no change in network
-    if(vcount(subg[[2]]) == vcount(subg[[1]]) | vcount(subg[[2]]) <= 2) break
-
-    mCC <- score_metrics[max.id, 1]
-    mZ <- score_metrics[max.id, 2]
-    n_nodes <- score_metrics[max.id, 3]
-
-    sn_score[2] <- mCC * mZ
-
-    all_scores[[length(all_scores) + 1]] <- c(decay, r, sn_score[2], mZ, mCC, n_nodes, igraph::ecount(subg[[2]]), igraph::edge_density(subg[[2]]), ll, mean(!V(subg[[1]])$name %in% V(subg[[2]])$name), seed.weight)
-    all_nets[[length(all_nets) + 1]] <- subg[[2]]
-
-    rm.id <- which(!V(subg[[1]])$name %in% V(subg[[2]])$name)
-
-    k <- k + 1
-    subg[[1]] <- subg[[2]]
-    sn_score[1] <- sn_score[2]
-
   }
-  message("*** Converged! ***")
 
-  allscores <- do.call("rbind", all_scores)
-  colnames(allscores) <- c("Decay", "Restart parameter", "Network score", "Avg Z", "Avg CCC", "Nodes", "Edges", "Density",
-                           "Filtering rate", "Observed filtering rate", "Seed weight")
-  allscores <- round(as.data.frame(allscores), 3)
+  # Choosing subnetwork with maximum score and (in the case of ties) closest to final module size 'n'
+  # and in case of two networks with same max score and same distance from 'n', choose larger subnetwork
+  if(sum(all_scores[size.cond, 3] == max(all_scores[size.cond, 3])) > 1){ # Handling ties
+    d = abs(all_scores[,6] - n)
+    ids = which(all_scores[,3] == max(all_scores[size.cond, 3]) & size.cond)
+    max.id = which(all_scores[,3] == max(all_scores[size.cond, 3]) & d == min(d[ids]) & size.cond)[1]
+  }else max.id = which(all_scores[,3] == max(all_scores[size.cond, 3]) & size.cond)
 
-  # Choosing subnetwork with maximum score
-  net_ids = lapply(all_nets, function(x){
-    row.names(adj_og)[row.names(adj_og) %in% V(x)$name]
-  })
-
-
-  if(sum(allscores[,3] == max(allscores[,3])) > 1){ # Handling ties
-    d = abs(allscores[,6] - n)
-    ids = which(allscores[,3] == max(allscores[,3]))
-    max.id = which(allscores[,3] == max(allscores[,3]) & d == min(d[ids]))
-  }else max.id <- which.max(allscores[,3])
-  best_sn <- all_nets[[max.id]]
-  best_score <- allscores[max.id,3]
+  best_sn = igraph::induced_subgraph(graph, which(V(graph)$name %in% all_nets[[max.id]]))
+  best_score = all_scores[max.id,3]
 
   end_time <- Sys.time()
   time <- end_time - start_time
+  message(paste0("*** Converged! *** ID=", identifier))
 
-  rm(list = ls()[!ls() %in% c("eta", "graph", "data.type", "eci.direction", "logFC.direction", "adj_matrix", "normalize",
-                              "eta.search", "seed.weight", "seed.scheme", "best_sn", "best_score", "allscores", "time", "net_ids")])
+  rm(list = ls()[!ls() %in% c("eta", "graph", "n", "data.type", "DOI", "adj_matrix", "normalize",
+                              "seed.weight", "seed.scheme", "best_sn", "best_score", "all_scores", "time", "all_nets")])
 
-  input_params = list(eta = eta, ig = graph, data.type = data.type, eci.dir = eci.direction, logFC.dir = logFC.direction, adjM = adj_matrix,
-                      norm = normalize, eta.search = eta.search, seed.weight = seed.weight, seed.scheme = seed.scheme)
+  input_params = list(eta0 = eta, ig = graph, n = n, data.type = data.type, DOI = DOI, adjM = adj_matrix,
+                      norm = normalize, seed.weight = seed.weight, seed.scheme = seed.scheme)
 
-  if(!eta.search){
-    return(list(module = best_sn, score = best_score, subnetworks = net_ids, stats = allscores, time = time, input_params = input_params))
-  }else{
-    rm(list = ls()[!ls() %in% c("best_score")])
-    return(best_score)
-  }
+  return(list(module = best_sn, score = best_score, subnetworks = all_nets, stats = all_scores, time = time, input_params = input_params))
 }
 
 #' @title Pre-processing of experimental data for input into AMEND and RWR
 #'
-#' @description Pre-processing of experimental data for input into AMEND and RWR. For use inside `amend()` and `run_AMEND()`.
+#' @description Pre-processing of experimental data for input into AMEND and RWR. For use inside `run_AMEND()`
 #'
 #' @details Transforms experimental data for use with Random walk with restart (RWR), which requires non-negative seed values with at least one non-zero element. For subnetwork scoring, the experimental scores need to be standardized w.r.t. all nodes in the input network.
-#' For data.type "ECI", the seeding scheme involves taking the absolute value of the ECIs then weighting those nodes NOT in the direction of interest by 'seed.weight'
-#' For data.type "logFC", the log fold changes are multiplied by -1 if the direction of interest is negative, 1 if the direction of interest is positive, and the absolute value is taken if the direction of interest is both. Then the values are exponentiated
+#' For data.type "ECI", the seeding scheme involves taking the absolute value of the ECIs then weighting those nodes NOT in the Direction of Interest (DOI) by 'seed.weight'
+#' For data.type "logFC", the log fold changes are multiplied by -1 if the DOI is negative, 1 if the DOI is positive, and the absolute value is taken if the DOI is both. Then the values are exponentiated
 #' For data.type "p_val", the p-values are transformed by -log10(p-value)
+#' For data.type "binary", weight is assigned uniformly to "active" nodes, i.e., nodes with a value of 1 in the binary vector.
+#' For data.type "other", no transformation is performed.
 #'
-#' @param graph (igraph object): input graph
-#' @param data.type (character): one of ECI, logFC, or p_val. If graph is specified, must have matching vertex attribute
-#' @param eci.direction (character): direction of interest for ECI values. negative or positive
-#' @param logFC.direction (character): direction of interest for log fold change values. negative, positive, or both. When "both" is specified, the absolute value of logFC is taken
-#' @param seed.weight (numeric): Relative weight to give to nodes not in the direction of interest in random walk with restart, between 0 and 1
-#' @param seed.scheme (character): Scheme used for transforming experimental values into seed values for RWR
-#' @param heterogeneous (logical): Is the input graph or adjacency matrix heterogeneous, i.e., contains more than one node type?
+#' @param graph Input graph
+#' @param data.type One of ECI, logFC, p_val, or binary. If graph is specified, must have matching vertex attribute
+#' @param DOI Direction of Interest for experimental values. One of negative, positive, or both. When "both" is specified, the absolute value is taken. Only relevant for data type ECI and logFC
+#' @param seed.weight Relative weight to give to nodes not in the DOI in random walk with restart, between 0 and 1
+#' @param seed.scheme Determines how the feature-wise experimental values are transformed for use as seed values in RWR. See Details.
+#' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute
 #'
-#' @return igraph object with 'seeds' and 'Z' vertex attributes
+#' @return igraph object with added 'seeds' and 'Z' vertex attributes
 #'
 #' @examples
 #' # Attach igraph package
@@ -410,9 +342,9 @@ amend <- function(eta = NULL, graph = NULL, n = 25, heterogeneous = F, data.type
 #'
 #' # Transform experimental values (ECI) for multiple values of 'seed.weight'
 #' new_graph1 = AMEND:::data_preprocessing(graph = glut4_graph, data.type = "ECI",
-#'                                         eci.direction = "negative", seed.weight = 0.5)
+#'                                         DOI = "negative", seed.weight = 0.5)
 #' new_graph2 = AMEND:::data_preprocessing(graph = glut4_graph, data.type = "ECI",
-#'                                         eci.direction = "negative", seed.weight = 0.2)
+#'                                         DOI = "negative", seed.weight = 0.2)
 #'
 #' # Comparing
 #' plot(density(V(new_graph1)$seeds))
@@ -421,11 +353,10 @@ amend <- function(eta = NULL, graph = NULL, n = 25, heterogeneous = F, data.type
 #' plot(V(new_graph1)$ECI, V(new_graph1)$Z, type = "b",
 #'      xlim = c(-1, 1), xlab = "ECI", ylab = "Standardized ECI")
 #'
-data_preprocessing = function(graph, data.type = c("ECI", "logFC", "p_val"), eci.direction = c("positive", "negative"),
-                              logFC.direction = c("positive", "negative", "both"), seed.weight = 0.5, seed.scheme = c("zero_bottom", "zero_middle"), heterogeneous = F){
-  data.type <- match.arg(data.type)
-  eci.direction <- match.arg(eci.direction)
-  logFC.direction <- match.arg(logFC.direction)
+data_preprocessing = function(graph, data.type = c("ECI", "logFC", "p_val", "binary", "other"), DOI = c("positive", "negative", "both"),
+                              seed.weight = 0.5, seed.scheme = c("zero_bottom", "zero_middle"), heterogeneous = FALSE){
+  data.type = match.arg(data.type)
+  DOI = match.arg(DOI)
   seed.scheme = match.arg(seed.scheme)
 
   # Transforming input data
@@ -435,47 +366,57 @@ data_preprocessing = function(graph, data.type = c("ECI", "logFC", "p_val"), eci
     }else if(seed.weight > 1){
       warning("Seed weight should be between 0 and 1.")
     }
-    s <- ifelse(eci.direction == "positive", 1, -1)
-    if(seed.scheme == "zero_bottom"){
-      vertex_attr(graph, "seeds") = ifelse(s == rep(1, vcount(graph)), ifelse(V(graph)$ECI > 0, V(graph)$ECI, seed.weight * abs(V(graph)$ECI)), ifelse(V(graph)$ECI < 0, abs(V(graph)$ECI), seed.weight * V(graph)$ECI))
-    }else if(seed.scheme == "zero_middle"){
-      vertex_attr(graph, "seeds") <- s*V(graph)$ECI + 1
-    }else stop("Unknown seed scheme specified.")
-    V(graph)$Z <- (V(graph)$ECI - mean(V(graph)$ECI))/sd(V(graph)$ECI) * s
+    if(DOI == "both"){
+      vertex_attr(graph, "seeds") = abs(V(graph)$ECI)
+      vertex_attr(graph, "Z") = (V(graph)$seeds - mean(V(graph)$seeds)) / sd(V(graph)$seeds)
+    }else{
+      s <- ifelse(DOI == "positive", 1, -1)
+      if(seed.scheme == "zero_bottom"){
+        vertex_attr(graph, "seeds") = ifelse(s == rep(1, vcount(graph)), ifelse(V(graph)$ECI > 0, V(graph)$ECI, seed.weight * abs(V(graph)$ECI)), ifelse(V(graph)$ECI < 0, abs(V(graph)$ECI), seed.weight * V(graph)$ECI))
+      }else if(seed.scheme == "zero_middle"){
+        vertex_attr(graph, "seeds") <- s*V(graph)$ECI + 1
+      }else stop("Unknown seed scheme specified.")
+      vertex_attr(graph, "Z") <- (V(graph)$ECI - mean(V(graph)$ECI))/sd(V(graph)$ECI) * s
+    }
   }else if(data.type == "logFC"){
-    if(logFC.direction == "both"){
+    if(DOI == "both"){
       vertex_attr(graph, "seeds") <- exp(abs(V(graph)$logFC))
-      V(graph)$Z <- (abs(V(graph)$logFC) - mean(abs(V(graph)$logFC)))/sd(abs(V(graph)$logFC))
-    }else if(logFC.direction %in% c("positive", "negative")){
-      s <- ifelse(logFC.direction == "positive", 1, -1)
+      vertex_attr(graph, "Z") <- (abs(V(graph)$logFC) - mean(abs(V(graph)$logFC)))/sd(abs(V(graph)$logFC))
+    }else if(DOI %in% c("positive", "negative")){
+      s <- ifelse(DOI == "positive", 1, -1)
       vertex_attr(graph, "seeds") <- exp(s*V(graph)$logFC)
-      V(graph)$Z <- (V(graph)$logFC - mean(V(graph)$logFC))/sd(V(graph)$logFC) * s
+      vertex_attr(graph, "Z") <- (V(graph)$logFC - mean(V(graph)$logFC))/sd(V(graph)$logFC) * s
     }
   }else if(data.type == "p_val"){
     vertex_attr(graph, "seeds") <- -log(vertex_attr(graph, "p_val") + 0.001, base = 10)
     vertex_attr(graph, "Z") <- (V(graph)$seeds - mean(V(graph)$seeds))/sd(V(graph)$seeds)
+  }else if(data.type == "binary"){
+    vertex_attr(graph, "seeds") = vertex_attr(graph, "binary") / sum(vertex_attr(graph, "binary"))
+    vertex_attr(graph, "Z") = (V(graph)$seeds - mean(V(graph)$seeds))/sd(V(graph)$seeds)
+  }else if(data.type == "other"){
+    vertex_attr(graph, "seeds") = vertex_attr(graph, "other")
+    vertex_attr(graph, "Z") = (V(graph)$seeds - mean(V(graph)$seeds))/sd(V(graph)$seeds)
   }else stop(paste0("Data type \'", data.type, "\' not recognized."))
+  # Addressing possible NA values
+  V(graph)$seeds[is.na(V(graph)$seeds)] = 0
+  V(graph)$Z[is.na(V(graph)$Z)] = 0
   return(graph)
 }
 
-
 #' @title Grid search for the restart parameter in RWR
 #'
-#' @description Grid search for the restart parameter in RWR. For use inside `amend()` and `run_AMEND()`
+#' @description Grid search for the restart parameter in RWR. For use inside `run_AMEND()`
 #'
-#' @details This is a multi-level grid search. The first level is simply a grid search. For the subsequent levels, the neighborhood about the optimal grid value from the previous level is searched. Stops when no improvement in network score or maximum number of levels is reached.
+#' @details This is a simple grid search for the restart probability parameter in RWR.
 #'
-#' @param g.min (numeric): minimum grid value
-#' @param g.max (numeric): maximum grid value
-#' @param n.1 (integer): number of grid points to search at first level
-#' @param levels (integer): number of levels to search
-#' @param ig input graph
-#' @param n.adj.M (matrix): normalized adjacency matrix
-#' @param seeds vector of seed values
-#' @param filtering_rate (numeric): quantile for shifting the raw RWR scores
-#' @param heterogeneous (logical): Is the input graph or adjacency matrix heterogeneous, i.e., contains more than one node type?
-#' @param node_type vector of node types (required if heterogeneous = T)
-#' @param net1.weight (numeric): Relative weight to give to network type 1 in RWR, where type 1 is the first type to appear in node_type (the vector _or_ vertex attr)
+#' @param ig Input graph
+#' @param n.adj.M Normalized adjacency matrix
+#' @param seeds Vector of seed values
+#' @param filtering_rate Quantile for shifting the raw RWR scores
+#' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute
+#' @param node_type Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.
+#' @param net1.weight Relative weight to give to nodes of network 1 (the first type to appear in node_type).
+#' @param iteration Current iteraiton of the AMEND algorithm
 #'
 #' @return a list containing an igraph object, subnetwork score, and restart value
 #'
@@ -490,9 +431,10 @@ data_preprocessing = function(graph, data.type = c("ECI", "logFC", "p_val"), eci
 #'                0, 1, 1, 0, 0, 0, 1, 1,
 #'                0, 0, 1, 0, 0, 0, 0, 0,
 #'                0, 0, 0, 1, 1, 0, 0, 0,
-#'                0, 0, 0, 0, 1, 0, 0, 0), nrow = 8)
+#'                0, 0, 0, 0, 1, 0, 0, 0), nrow = 8, dimnames = list(1:8, 1:8))
 #' g = graph_from_adjacency_matrix(adjm, mode = 'undirected')
 #' V(g)$name = 1:8
+#' plot(g)
 #'
 #' # Normalizing the adjacency matrix
 #' adj_norm = adjm %*% diag(1 / degree(g))
@@ -501,114 +443,82 @@ data_preprocessing = function(graph, data.type = c("ECI", "logFC", "p_val"), eci
 #' seeds = runif(8)
 #' names(seeds) = 1:8
 #'
-#' search = AMEND:::smart.restart.grid.search(g.min = 0.1, g.max = 0.9, n.1 = 10, levels = 3,
-#'                                            ig = g, n.adj.M = adj_norm, seeds = seeds,
-#'                                            filtering_rate = 0.3)
+#' search = AMEND:::restart_grid_search(ig = g, n.adj.M = adj_norm,
+#'                                      seeds = seeds, filtering_rate = 0.3)
+#' plot(search[[1]])
 #'
-smart.restart.grid.search <- function(g.min, g.max, n.1, levels = 3, ig, n.adj.M, seeds, filtering_rate, heterogeneous = F, node_type = NULL, net1.weight = 0.5){
-  # Create grid
-  get.r.grid<- function(best.g, g.min, g.max, p1, n){
-    p <- p1/(2^(n-1))
-    if(best.g == g.min){
-      new.grid <- best.g + p
-    }else if(best.g == g.max){
-      new.grid <- best.g - p
-    }else new.grid <- c(best.g - p, best.g + p)
-    return(new.grid)
-  }
+restart_grid_search <- function(ig, n.adj.M, seeds, filtering_rate, heterogeneous = FALSE, node_type = NULL, net1.weight = 0.5, iteration = 1){
+  if(iteration == 1){
+    grid <- seq(0.75, 0.95, by = 0.05)
+  }else grid <- seq(0.5, 0.95, by = 0.05)
 
-  p1 <- (g.max - g.min)/(n.1 - 1)
-  grid <- seq(g.max, g.min, by = -p1)
+  score_metrics <- matrix(nrow = length(grid), ncol = 4)
+  nets <- vector(mode = "list", length = length(grid))
+  rm.id = c()
+  for(i in seq_along(grid)){
+    # RWR
+    PTmatrix2 <- RWR(nadjM = n.adj.M, setSeeds = seeds, restart = grid[i], heterogeneous = heterogeneous, node_type = node_type, net1.weight = net1.weight)
+    rwr_score <- as.vector(PTmatrix2)
 
-  best.r <- numeric()
-  best.scores <- c(-Inf)
-  n <- 1
+    # Scores for Maximum Scoring Subgraph Algorithm
+    rwr_score <- rwr_score - quantile(rwr_score, filtering_rate) # if filtering rate close to 0, quantile takes the minimum of rwr_score
+    names(rwr_score) <- V(ig)$name
+    nets[[i]] <- heinz(ig, rwr_score)
 
-  all_metrics = c()
+    n.v <- vcount(nets[[i]])
+    mZ <- sum(V(nets[[i]])$Z) / n.v
+    mCC = sum(core_cc(nets[[i]])) / n.v
 
-  repeat{
-    score_metrics <- matrix(nrow = length(grid), ncol = 3)
-    nets <- vector(mode = "list", length = length(grid))
-
-    for(i in seq_along(grid)){
-      # RWR
-      PTmatrix2 <- RWR(nadjM = n.adj.M, setSeeds = seeds, restart = grid[i], heterogeneous = heterogeneous, node_type = node_type, net1.weight = net1.weight)
-      rwr_res <- as.vector(PTmatrix2)
-
-      # Scores for Maximum Scoring Subgraph Algorithm
-      rwr_score <- rwr_res - quantile(rwr_res, filtering_rate)
-      score <- rwr_score
-      names(score) <- V(ig)$name
-
-      nets[[i]] <- dNetFind_alt(ig, score)
-
-      n.v <- vcount(nets[[i]])
-
-      mZ <- sum(V(nets[[i]])$Z) / n.v
-
-      mCC = sum(core_cc(nets[[i]])) / n.v
-
-      # To prevent filtering out too many nodes at one iteration
-      if((vcount(ig) - n.v) / vcount(ig) - filtering_rate >= 0.5) next
-
-      score_metrics[i,] <- c(mCC, mZ, n.v)
+    # To prevent filtering out too many nodes at one iteration
+    # This is the difference between the observed and theoretical filtering rates
+    if((vcount(ig) - n.v) / vcount(ig) - filtering_rate >= 0.25){ # 3/16/2023: used to be 0.5
+      rm.id = c(rm.id, i)
+      next
     }
 
-    score_metrics = score_metrics[which(score_metrics[,1] != 0),]
-
-    if(isTRUE(nrow(score_metrics) >= 1)){ # if score matrix isn't empty
-      max.id <- which.max(score_metrics[, 2] * score_metrics[, 1])
-      g.score <- score_metrics[max.id, 2] * score_metrics[max.id, 1]
-
-      all_metrics = c(all_metrics, score_metrics[,3])
-
-    }else if(n == 1){ # else if score matrix is empty on first level, break out of repeat loop
-      new.g = ig
-      n.v = vcount(new.g)
-      new.scores = c(sum(core_cc(new.g)) / n.v, sum(V(new.g)$Z) / n.v, n.v)
-      best.r = NA
-      break
-    }else g.score = -Inf # else if score matrix is empty NOT on first level
-
-    if(g.score > best.scores[ifelse(n == 1, 1, n-1)]){ # if best of current level is better than previous level
-      new.g <- nets[[max.id]]
-      new.scores <- score_metrics[max.id,]
-      best.scores[n] <- g.score
-      best.r[n] <- grid[max.id]
-    }else{ # else keep score from last level
-      best.scores[n] <- best.scores[n-1]
-      best.r[n] <- best.r[n-1]
-    }
-
-    if(n == levels) break
-
-    n <- n + 1
-
-    grid <- get.r.grid(best.r[n-1], g.min, g.max, p1, n)
+    score_metrics[i,] <- c(mCC, mZ, n.v, grid[i])
+  }
+  rm.id = unique(c(rm.id, which(score_metrics[,1] %in% c(0, NA))))
+  if(length(rm.id) != 0){
+    score_metrics = score_metrics[-rm.id,]
+    nets = nets[-rm.id]
   }
 
-  return(list(new.g, new.scores, best.r[n]))
+  if(isTRUE(nrow(score_metrics) >= 1)){ # if score matrix isn't empty
+    max.id <- which.max(score_metrics[, 2] * score_metrics[, 1])
+    new.scores <- score_metrics[max.id,]
+    new.g <- nets[[max.id]]
+    best.r <- score_metrics[max.id, 4]
+  }else{
+    new.g = ig
+    n.v = vcount(new.g)
+    new.scores = c(sum(core_cc(new.g)) / n.v, sum(V(new.g)$Z) / n.v, n.v, NA)
+    best.r = NA
+  }
+
+  return(list(new.g, new.scores, best.r))
 }
 
-
-#' @title Nnormalize the adjacency matrix of a graph
+#' @title Create a transition matrix from the adjacency matrix of a graph
 #'
-#' @description `norm.adj()` normalizes the adjacency matrix of a graph for input into random walk with restart (RWR).
+#' @description `transition_matrix()` creates a transition matrix from the adjacency matrix of a graph for input into random walk with restart (RWR).
 #'
 #' @details There are two normalization schemes available.
-#' * core: uses the concept of node coreness. Details can be found in \url{https://academic.oup.com/nar/article/48/17/e98/5879427}
 #' * degree: divides each column of the adjacency matrix by the column total
+#' * core: uses the concept of node coreness. Details can be found in \url{https://academic.oup.com/nar/article/48/17/e98/5879427}
 #'
-#' @param g (igraph object): input graph
-#' @param adjM (matrix): adjacency matrix
-#' @param norm (character): normalization method
-#' @param heterogeneous (logical): Is the input graph or adjacency matrix heterogeneous, i.e., contains more than one node type?
-#' @param node_type vector of node types (required if heterogeneous = T)
-#' @param jump (numeric): Jumping parameter for RWR on heterogeneous networks
+#' @param g Input graph
+#' @param adjM Adjacency matrix
+#' @param norm Normalization method
+#' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute
+#' @param node_type Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.
+#' @param jump Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE)
 #'
-#' @return normalized adjacency matrix
+#' @return transition matrix
 #'
 #' @examples
+#'
+#'
 #' library(igraph)
 #'
 #' # Creating an adjacency matrix and graph
@@ -622,35 +532,48 @@ smart.restart.grid.search <- function(g.min, g.max, n.1, levels = 3, ig, n.adj.M
 #'                0, 0, 0, 0, 1, 0, 0, 0), nrow = 8)
 #' g = graph_from_adjacency_matrix(adjm, mode = 'undirected')
 #'
-#' adj_norm = AMEND:::norm.adj(g, adjm)
+#' adj_norm = AMEND:::transition_matrix(g, adjm, norm = "degree")
 #'
-norm.adj <- function(g, adjM, norm = c("core", "degree"), heterogeneous = FALSE, node_type = NULL, jump = 0.5){
-  sum2one <- function(mat) {
-    col_sum <- abs(apply(mat, 2, sum))
-    col_sum_matrix <- matrix(rep(col_sum, nrow(mat)),
-                             ncol = ncol(mat), nrow = nrow(mat), byrow = T)
-    res <- as.matrix(mat) / col_sum_matrix
-    res[is.na(res)] <- 0
-    return(res)
+#' @keywords internal
+transition_matrix <- function(g, adjM, norm = c("degree", "core"), heterogeneous = FALSE, node_type = NULL, jump = 0.5){
+  sum2one <- function(X) {
+    if(!"dgCMatrix" %in% class(X)){
+      X = Matrix::Matrix(X, sparse = TRUE)
+      # if("numeric" %in% class(X)){
+      #   # X = methods::as(matrix(X, ncol = 1), "dgCMatrix")
+      #   X = Matrix::Matrix(X, sparse = TRUE)
+      # }else if("matrix" %in% class(X)){
+      #   X = methods::as(X, "dgCMatrix")
+      # }else X = methods::as(as.matrix(X), "dgCMatrix")
+    }
+    inv_col_sum = Matrix::Diagonal(x = abs(Matrix::colSums(X))^(-1))
+    res = X %*% inv_col_sum
+    res[is.na(res)] = 0
+    res
   }
+
+  # Coerce to a general, column-compressed sparse matrix from Matrix package
+  if(!"dgCMatrix" %in% class(adjM)){
+    adjM = methods::as(adjM, "dgCMatrix")
+  }
+
   if(!heterogeneous){
     norm <- match.arg(norm)
 
-    if (norm == "core") {
-      adjE <- igraph::as_adjacency_matrix(g, type = "both", sparse = FALSE)
-      core <- igraph::coreness(g)
-      nadjM <- matrix(0, nrow = nrow(adjE), ncol = nrow(adjE))
-      for(j in 1:nrow(nadjM)){
-        cond <- adjE[,j] != 0
-        denom <- sum(core[cond])
-        nadjM[cond, j] <- core[cond] / denom
+    if(norm == "core"){
+      adj.dense = as.matrix(adjM)
+      core <- sna::kcores(adj.dense, mode = "graph", ignore.eval = T)
+      nadjM = matrix(0, nrow = nrow(adjM), ncol = nrow(adjM))
+      for(j in 1:ncol(nadjM)){
+        id.tmp = adjM@i[(adjM@p[j] + 1):adjM@p[j+1]] + 1 # row ids of non-zero elements in column j
+        denom = sum(core[id.tmp])
+        nadjM[id.tmp, j] = core[id.tmp] / denom
       }
-    }
-    else if (norm == "degree") {
+      nadjM = methods::as(nadjM, "dgCMatrix")
+    }else if(norm == "degree"){
       wt <- Matrix::Diagonal(x = Matrix::colSums(adjM)^(-1))
       nadjM <- adjM %*% wt
-    }
-    else {
+    }else{
       nadjM <- adjM
     }
     dimnames(nadjM) = dimnames(adjM)
@@ -658,93 +581,130 @@ norm.adj <- function(g, adjM, norm = c("core", "degree"), heterogeneous = FALSE,
   }else{
     norm <- match.arg(norm)
 
-    if(is.null(node_type)) stop("norm.adj requires a vector of node types as input for heterogeneous graphs.")
+    if(is.null(node_type)) stop("node_type is null.")
 
     # Unique node types
     nt = unique(node_type)
-    if(length(nt) > 2) stop("There can be no more than 2 node types.")
-
-    # node names
-    if(is.null(colnames(adjM))) colnames(adjM) = 1:ncol(adjM)
+    if(length(nt) > 2) stop("There are more than 2 node types.")
 
     adj.1 = adjM[node_type == nt[1], node_type == nt[1]]
     adj.2 = adjM[node_type == nt[2], node_type == nt[2]]
     adj.12 = adjM[node_type == nt[1], node_type == nt[2]]
     adj.21 = Matrix::t(adj.12)
 
+    # Checking row and column names
+    if(is.null(rownames(adj.1))) rownames(adj.1) = rownames(adjM)[node_type == nt[1]]
+    if(is.null(colnames(adj.1))) colnames(adj.1) = colnames(adjM)[node_type == nt[1]]
+
+    if(is.null(rownames(adj.2))) rownames(adj.2) = rownames(adjM)[node_type == nt[2]]
+    if(is.null(colnames(adj.2))) colnames(adj.2) = colnames(adjM)[node_type == nt[2]]
+
+    if(is.null(rownames(adj.12))) rownames(adj.12) = rownames(adjM)[node_type == nt[1]]
+    if(is.null(colnames(adj.12))) colnames(adj.12) = colnames(adjM)[node_type == nt[2]]
+
+    if(is.null(rownames(adj.21))) rownames(adj.21) = rownames(adjM)[node_type == nt[2]]
+    if(is.null(colnames(adj.21))) colnames(adj.21) = colnames(adjM)[node_type == nt[1]]
+
+    # Determining bipartite nodes
+    bp = logical(ncol(adjM))
+    for(i in 1:length(bp)){
+      id.tmp = adjM@i[(adjM@p[i] + 1):adjM@p[i+1]] + 1 # node ids of non-zero elements in column j
+      bp[i] = all(nt %in% node_type[id.tmp])
+    }
+    bp.1 = bp[node_type == nt[1]]
+    bp.2 = bp[node_type == nt[2]]
+
     if(norm == "core"){
-      core = igraph::coreness(g)
+      # core <- igraph::coreness(g)
+      adj.dense = as.matrix(adjM)
+      core <- sna::kcores(adj.dense, mode = "graph", ignore.eval = T)
+      core.1 = core[node_type == nt[1]]
+      core.2 = core[node_type == nt[2]]
 
-      # adjacency matrix of first node type (in order that they occur in node_type)
+      # PPIs
       nadj.1 = matrix(0, nrow = nrow(adj.1), ncol = nrow(adj.1), dimnames = dimnames(adj.1))
-      for(j in 1:ncol(nadj.1)){
-        r.name <- rownames(nadj.1)[adj.1[,j] != 0]
-        denom <- sum(core[r.name])
-        bp = ifelse(all(nt %in% node_type[adjM[,colnames(adj.1)[j]] != 0]), 1 - jump, 1)
-        nadj.1[r.name, j] <- bp * core[r.name] / denom
+      c.sum = Matrix::colSums(adj.1)
+      jump.tmp = ifelse(bp.1, 1 - jump, 1)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.1@i[(adj.1@p[j] + 1):adj.1@p[j+1]] + 1 # row ids of non-zero elements in column j
+        denom = sum(core.1[id.tmp])
+        nadj.1[id.tmp, j] = jump.tmp[j] * core.1[id.tmp] / denom
       }
-      # adjacency matrix of second node type
-      nadj.2 = matrix(0, nrow = nrow(adj.2), ncol = nrow(adj.2), dimnames = dimnames(adj.2))
-      for(j in 1:ncol(nadj.2)){
-        r.name <- rownames(nadj.2)[adj.2[,j] != 0]
-        denom <- sum(core[r.name])
-        bp = ifelse(all(nt %in% node_type[adjM[,colnames(adj.2)[j]] != 0]), 1 - jump, 1)
-        nadj.2[r.name, j] <- bp * core[r.name] / denom
-      }
-      # node type 1 in rows, node type 2 in columns
-      nadj.12 = matrix(0, nrow = nrow(adj.12), ncol = ncol(adj.12), dimnames = dimnames(adj.12))
-      for(j in 1:ncol(nadj.12)){
-        r.name <- rownames(adj.12)[adj.12[,j] != 0]
-        if(length(r.name) > 0){
-          denom <- sum(core[r.name])
-          nadj.12[r.name, j] <- jump * core[r.name] / denom
-        }
-      }
-      # node type 2 in rows, node type 1 in columns
-      nadj.21 = matrix(0, nrow = nrow(adj.21), ncol = ncol(adj.21), dimnames = dimnames(adj.21))
-      for(j in 1:ncol(nadj.21)){
-        r.name <- rownames(adj.21)[adj.21[,j] != 0]
-        if(length(r.name) > 0){
-          denom <- sum(core[r.name])
-          nadj.21[r.name, j] <- jump * core[r.name] / denom
-        }
-      }
+      nadj.1 = methods::as(nadj.1, "dgCMatrix")
 
-      # core-normalized transition matrix with jumping probability
+      # MMIs
+      nadj.2 = matrix(0, nrow = nrow(adj.2), ncol = nrow(adj.2), dimnames = dimnames(adj.2))
+      c.sum = Matrix::colSums(adj.2)
+      jump.tmp = ifelse(bp.2, 1 - jump, 1)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.2@i[(adj.2@p[j] + 1):adj.2@p[j+1]] + 1 # row ids of non-zero elements in column j
+        denom = sum(core.2[id.tmp])
+        nadj.2[id.tmp, j] = jump.tmp[j] * core.2[id.tmp] / denom
+      }
+      nadj.2 = methods::as(nadj.2, "dgCMatrix")
+
+      # pm: proteins in rows, metabolites in columns
+      nadj.12 = matrix(0, nrow = nrow(adj.12), ncol = ncol(adj.12), dimnames = dimnames(adj.12))
+      c.sum = Matrix::colSums(adj.12)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.12@i[(adj.12@p[j] + 1):adj.12@p[j+1]] + 1 # row ids of non-zero elements in column j
+        denom = sum(core.1[id.tmp])
+        nadj.12[id.tmp, j] <- jump * core.1[id.tmp] / denom
+      }
+      nadj.12 = methods::as(nadj.12, "dgCMatrix")
+
+      # mp: metabolites in rows, proteins in columns
+      nadj.21 = matrix(0, nrow = nrow(adj.21), ncol = ncol(adj.21), dimnames = dimnames(adj.21))
+      c.sum = Matrix::colSums(adj.21)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.21@i[(adj.21@p[j] + 1):adj.21@p[j+1]] + 1 # row ids of non-zero elements in column j
+        denom = sum(core.2[id.tmp])
+        nadj.21[id.tmp, j] <- jump * core.2[id.tmp] / denom
+      }
+      nadj.21 = methods::as(nadj.21, "dgCMatrix")
+
+      # degree-normalized transition matrix with jumping probability
       nadjM = rbind(cbind(nadj.1, nadj.12), cbind(nadj.21, nadj.2))
       # Ensuring columns sum to 1
       nadjM = sum2one(nadjM)
     }else if(norm == "degree"){
       # PPIs
       nadj.1 = matrix(0, nrow = nrow(adj.1), ncol = nrow(adj.1), dimnames = dimnames(adj.1))
-      for(j in 1:ncol(nadj.1)){
-        denom <- sum(adj.1[,j])
-        bp = ifelse(all(nt %in% node_type[adjM[,colnames(adj.1)[j]] != 0]), 1 - jump, 1)
-        nadj.1[,j] <- bp * adj.1[,j] / denom
+      c.sum = Matrix::colSums(adj.1)
+      jump.tmp = ifelse(bp.1, 1 - jump, 1)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.1@i[(adj.1@p[j] + 1):adj.1@p[j+1]] + 1 # row ids of non-zero elements in column j
+        nadj.1[id.tmp, j] = jump.tmp[j] * adj.1[id.tmp, j] / c.sum[j]
       }
+      nadj.1 = methods::as(nadj.1, "dgCMatrix")
+
       # MMIs
       nadj.2 = matrix(0, nrow = nrow(adj.2), ncol = nrow(adj.2), dimnames = dimnames(adj.2))
-      for(j in 1:ncol(nadj.2)){
-        denom <- sum(adj.2[,j])
-        bp = ifelse(all(nt %in% node_type[adjM[,colnames(adj.2)[j]] != 0]), 1 - jump, 1)
-        nadj.2[,j] <- bp * adj.2[,j] / denom
+      c.sum = Matrix::colSums(adj.2)
+      jump.tmp = ifelse(bp.2, 1 - jump, 1)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.2@i[(adj.2@p[j] + 1):adj.2@p[j+1]] + 1 # row ids of non-zero elements in column j
+        nadj.2[id.tmp, j] = jump.tmp[j] * adj.2[id.tmp, j] / c.sum[j]
       }
+      nadj.2 = methods::as(nadj.2, "dgCMatrix")
+
       # pm: proteins in rows, metabolites in columns
       nadj.12 = matrix(0, nrow = nrow(adj.12), ncol = ncol(adj.12), dimnames = dimnames(adj.12))
-      for(j in 1:ncol(nadj.12)){
-        if(sum(adj.12[,j]) != 0){
-          denom <- sum(adj.12[,j])
-          nadj.12[,j] <- jump * adj.12[,j] / denom
-        }
+      c.sum = Matrix::colSums(adj.12)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.12@i[(adj.12@p[j] + 1):adj.12@p[j+1]] + 1 # row ids of non-zero elements in column j
+        nadj.12[id.tmp, j] <- jump * adj.12[id.tmp, j] / c.sum[j]
       }
+      nadj.12 = methods::as(nadj.12, "dgCMatrix")
+
       # mp: metabolites in rows, proteins in columns
       nadj.21 = matrix(0, nrow = nrow(adj.21), ncol = ncol(adj.21), dimnames = dimnames(adj.21))
-      for(j in 1:ncol(nadj.21)){
-        if(sum(adj.21[,j]) != 0){
-          denom <- sum(adj.21[,j])
-          nadj.21[,j] <- jump * adj.21[,j] / denom
-        }
+      c.sum = Matrix::colSums(adj.21)
+      for(j in which(c.sum != 0)){
+        id.tmp = adj.21@i[(adj.21@p[j] + 1):adj.21@p[j+1]] + 1 # row ids of non-zero elements in column j
+        nadj.21[id.tmp, j] <- jump * adj.21[id.tmp, j] / c.sum[j]
       }
+      nadj.21 = methods::as(nadj.21, "dgCMatrix")
 
       # degree-normalized transition matrix with jumping probability
       nadjM = rbind(cbind(nadj.1, nadj.12), cbind(nadj.21, nadj.2))
@@ -756,20 +716,131 @@ norm.adj <- function(g, adjM, norm = c("core", "degree"), heterogeneous = FALSE,
     return(nadjM)
   }
 }
-# EDIT 11/1: removed edges arg in as_adjacency_matrix(), added examples, removed "weight" option in norm arg, modified degree normalization
 
+#' @title Inflation operator on rows then column normalization
+#'
+#' @description `inflate_normalize()` applies...
+#'
+#' @param nadjM Normalized adjacency matrix
+#'
+#' @return left stochastic matrix
+#'
+#' @examples
+#' # Calculate the entropy (information) of a vector
+#' entropy = function(x){
+#'   tmp = ifelse(round(x, 20) == 0, 0, -x * log(x))
+#'   sum(tmp)
+#' }
+#' # Calculate the stationary distribution of the transition matrix of an irriducible markov chain
+#' stationary.distr = function(x){
+#'   e = Re(RSpectra::eigs(A = x, k = 1, which = "LM")$vectors[,1])
+#'   e / sum(e)
+#' }
+#' d = igraph::degree(glut4_graph) # node degrees of the graph
+#' # normalizing adjacency matrix to get transition matrix
+#' adj_norm = AMEND:::transition_matrix(glut4_graph, glut4_adjM, norm = "degree")
+#' p1 = stationary.distr(adj_norm)
+#' e1 = entropy(p1)
+#' # Perform inflation-normalization
+#' # This maximize entropy of stationary distribution of transition matrix
+#' adj_norm = AMEND:::inflate_normalize(nadjM = adj_norm)
+#' p2 = stationary.distr(adj_norm)
+#' e2 = entropy(p2)
+#'
+#' # Compare before and after
+#' e1 < e2
+#' plot(d, p1, xlab = "Degree", ylab = "Stationary Distribution", main = "Before", ylim = c(0, 0.01))
+#' abline(a = 0, b = 1 / sum(d), xpd = FALSE)
+#' plot(d, p2, xlab = "Degree", ylab = "Stationary Distribution", main = "After", ylim = c(0, 0.01))
+#' abline(a = 0, b = 1 / sum(d), xpd = FALSE)
+#'
+inflate_normalize <- function (nadjM){
+  entropy = function(x){
+    tmp = ifelse(round(x, 20) == 0, 0, -x * log(x))
+    sum(tmp)
+  }
+  sum2one = function(X) {
+    if(!"dgCMatrix" %in% class(X)){
+      X = Matrix::Matrix(X, sparse = TRUE)
+      # if("numeric" %in% class(X)){
+      #   X = Matrix::Matrix(X, sparse = TRUE)
+      # }else if("matrix" %in% class(X)){
+      #   X = methods::as(X, "dgCMatrix")
+      # }else X = methods::as(as.matrix(X), "dgCMatrix")
+    }
+    inv_col_sum = Matrix::Diagonal(x = abs(Matrix::colSums(X))^(-1))
+    res = X %*% inv_col_sum
+    res[is.na(res)] = 0
+    res
+  }
+  stationary.distr = function(x){
+    e = Re(RSpectra::eigs(A = x, k = 1, which = "LM")$vectors[,1])
+    e / sum(e)
+  }
+
+  # Changing to a Row-compressed sparse matrix
+  nadjM = methods::as(as.matrix(nadjM), "dgRMatrix")
+  # Getting stationary distribution of nadjM
+  stat.distr1 = stationary.distr(nadjM)
+  e0 = entropy(stat.distr1)
+  # Performing Inflation/normalization on transition matrix
+  kf = c(1, 10, seq(50, 2000, 50))
+  res = numeric(length(kf))
+  for(j in seq_along(kf)){
+    inflation = 1 + kf[j] * stat.distr1
+    nadjM.tmp = nadjM
+    tmp = numeric(Matrix::nnzero(nadjM.tmp))
+    for(i in seq_along(inflation)){ # i corresponds to rows of nadjM
+      id.tmp = (nadjM.tmp@p[i] + 1):nadjM.tmp@p[i+1] # ids of nadjM.tmp@x that are non-zero and in row i
+      n.tmp = nadjM.tmp@p[i+1] - nadjM.tmp@p[i] # number of non-zero elements in row i
+      tmp[id.tmp] = rep(inflation[i], n.tmp)
+    }
+    nadjM.tmp@x = nadjM.tmp@x ^ tmp; rm(tmp)
+    nadjM.tmp = sum2one(nadjM.tmp)
+    sd.tmp = stationary.distr(nadjM.tmp)
+    if(any(sd.tmp < 0 | sd.tmp > 1)){
+      if(j == 1){
+        nadjM = methods::as(as.matrix(nadjM), "dgCMatrix")
+        return(nadjM)
+      }else{
+        j = j-1
+        break
+      }
+    }
+    res[j] = entropy(sd.tmp)
+    if(j == 1){
+      if(res[j] < e0){
+        nadjM = methods::as(as.matrix(nadjM), "dgCMatrix")
+        return(nadjM)
+      }
+    }else if(res[j] < res[j-1]){
+      break
+    }
+  }
+  res = res[1:j]
+  j = which.max(res)
+  inflation = 1 + kf[j] * stat.distr1
+  tmp = numeric(Matrix::nnzero(nadjM))
+  for(i in seq_along(inflation)){ # i corresponds to rows of nadjM
+    id.tmp = (nadjM@p[i] + 1):nadjM@p[i+1] # ids of nadjM.tmp@x that are non-zero and in row i
+    n.tmp = nadjM@p[i+1] - nadjM@p[i] # number of non-zero elements in row i
+    tmp[id.tmp] = rep(inflation[i], n.tmp)
+  }
+  nadjM@x = nadjM@x ^ tmp
+  nadjM = sum2one(nadjM)
+  nadjM
+}
 
 #' @title Random walk with restart (RWR) procedure
 #'
 #' @description `RWR()` implements the RWR procedure. This simulates random walkers on a graph, with a certain probability of returning to the seeds nodes.
 #'
-#' @note Adapted from the _dnet_ package
-#' @param nadjM (matrix): normalized adjacency matrix
-#' @param setSeeds (vector): vector of seed values
-#' @param restart (numeric): restart parameter
-#' @param heterogeneous (logical): Is the input graph or adjacency matrix heterogeneous, i.e., contains more than one node type?
-#' @param node_type vector of node types (required if heterogeneous = T)
-#' @param net1.weight (numeric): Relative weight to give to network type 1 in RWR, where type 1 is the first type to appear in node_type (the vector _or_ vertex attr)
+#' @param nadjM Normalized adjacency matrix
+#' @param setSeeds Vector of seed values
+#' @param restart Restart parameter
+#' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute
+#' @param node_type Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.
+#' @param net1.weight Relative weight to give to nodes of network 1 (the first type to appear in node_type).
 #'
 #' @return vector of propagation scores from RWR
 #'
@@ -784,7 +855,7 @@ norm.adj <- function(g, adjM, norm = c("core", "degree"), heterogeneous = FALSE,
 #'                0, 1, 1, 0, 0, 0, 1, 1,
 #'                0, 0, 1, 0, 0, 0, 0, 0,
 #'                0, 0, 0, 1, 1, 0, 0, 0,
-#'                0, 0, 0, 0, 1, 0, 0, 0), nrow = 8)
+#'                0, 0, 0, 0, 1, 0, 0, 0), nrow = 8, dimnames = list(1:8, 1:8))
 #' g = graph_from_adjacency_matrix(adjm, mode = 'undirected')
 #' V(g)$name = 1:8
 #'
@@ -795,28 +866,26 @@ norm.adj <- function(g, adjM, norm = c("core", "degree"), heterogeneous = FALSE,
 #' seeds = runif(8)
 #' names(seeds) = 1:8
 #'
-#' rwr = AMEND:::dRWR_alt(g, adj_norm, seeds, 0.8)
+#' rwr = AMEND:::RWR(nadjM = adj_norm, setSeeds = seeds, restart = 0.8)
 #'
-RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, node_type = NULL, net1.weight = 0.5)
-{
+RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, node_type = NULL, net1.weight = 0.5){
   # NB: Assuming node_type in same order as setSeeds, while order of setSeeds doesn't need to equal order of rows/columns in nadjM
+  # The ordering will conform to nadjM
   # Also, assuming that node types in nadjM are in blocks (e.g., all proteins, then all metabolites)
 
-  sum2one <- function(PTmatrix) {
-    col_sum <- abs(apply(PTmatrix, 2, sum))
-    col_sum_matrix <- matrix(rep(col_sum, nrow(PTmatrix)),
-                             ncol = ncol(PTmatrix), nrow = nrow(PTmatrix), byrow = T)
-    res <- as.matrix(PTmatrix) / col_sum_matrix
-    res[is.na(res)] <- 0
-    return(res)
+  sum2one <- function(X) {
+    if(!"dgCMatrix" %in% class(X)) X = Matrix::Matrix(X, sparse = TRUE)
+
+    inv_col_sum = Matrix::Diagonal(x = abs(Matrix::colSums(X))^(-1))
+    res = X %*% inv_col_sum
+    res[is.na(res)] = 0
+    res
   }
   if (is.null(restart) || is.na(restart) || restart < 0 || restart > 100) {
     r <- 0.75
-  }
-  else if (restart > 1 && restart < 100) {
+  }else if (restart > 1 && restart < 100) {
     r <- restart/100
-  }
-  else {
+  }else {
     r <- restart
   }
   stop_delta <- 1e-06
@@ -825,26 +894,19 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
     P0matrix <- Matrix::Matrix(diag(nrow(nadjM)), sparse = T)
     rownames(P0matrix) <- rownames(nadjM)
     colnames(P0matrix) <- rownames(nadjM)
-  }
-  else {
-    if(heterogeneous && is.null(node_type)) stop("node_type must be given for heterogeneous graphs.")
+  }else {
+    if(heterogeneous && is.null(node_type)) stop("node_type is not given. node_type must be given for heterogeneous graphs.")
     if (is.matrix(setSeeds) | is.data.frame(setSeeds)) {
       data <- as.matrix(setSeeds)
-    }
-    else if (is.vector(setSeeds)) {
+    }else if (is.vector(setSeeds)) {
       data <- as.matrix(setSeeds, ncol = 1)
     }
     if (is.null(rownames(data))) {
       stop("The function must require the row names of the input setSeeds.\n")
-    }
-    else if (any(is.na(rownames(data)))) {
+    }else if (any(is.na(rownames(data)))) {
       warning("setSeeds with NA as row names will be removed")
       data <- data[!is.na(rownames(data)), ]
       node_type = node_type[!is.na(rownames(data))]
-    }
-    cnames <- colnames(data)
-    if (is.null(cnames)) {
-      cnames <- seq(1, ncol(data))
     }
     ind <- match(rownames(data), rownames(nadjM)) # This ensures that all(rownames(data) == rownames(nadjM)[ind]) is TRUE
     nodes_mapped <- rownames(nadjM)[ind[!is.na(ind)]]
@@ -853,58 +915,55 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
     if (length(nodes_mapped) != nrow(nadjM)) {
       warning("The row names of input setSeeds do not contain all those in the input graph.\n")
     }
+
     P0matrix <- matrix(0, nrow = nrow(nadjM), ncol = ncol(data))
     P0matrix[ind[!is.na(ind)], ] <- as.matrix(data[!is.na(ind),]) # ensuring that order of P0matrix is same as rownames(nadjM)
     if(heterogeneous){
-      # node_type <- node_type[ind[!is.na(ind)]] # incorrect!
       node_type[ind[!is.na(ind)]] <- node_type # ensuring that order of node_type is same as P0matrix
-      P0matrix <- rbind(net1.weight * sum2one(as.matrix(P0matrix[node_type == nt[1],])),
-                        (1 - net1.weight) * sum2one(as.matrix(P0matrix[node_type == nt[2],])))
+      # Setting seed vector
+      P0matrix <- rbind(net1.weight * sum2one(P0matrix[node_type == nt[1],]),
+                        (1 - net1.weight) * sum2one(P0matrix[node_type == nt[2],]))
     }else{
       P0matrix <- sum2one(P0matrix)
     }
-    P0matrix <- Matrix::Matrix(P0matrix, sparse = T)
+    # P0matrix <- Matrix::Matrix(P0matrix, sparse = T)
   }
   if (restart == 1) {
     PTmatrix <- P0matrix
-  }
-  else {
+  }else {
     PTmatrix <- Matrix::Matrix(0, nrow = nrow(P0matrix), ncol = ncol(P0matrix), sparse = T)
-    for (j in 1:ncol(P0matrix)) {
-      P0 <- P0matrix[, j]
-      step <- 0
-      delta <- 1
-      PT <- P0
-      while (delta > stop_delta && step <= stop_step) {
-        PX <- (1 - r) * nadjM %*% PT + r * P0
-        delta <- sum(abs(PX - PT))
-        PT <- PX
-        step <- step + 1
-      }
-      PT[PT < 1e-06] <- 0
-      PTmatrix[, j] <- PT
+    P0 <- P0matrix[, 1]
+    step <- 0
+    delta <- 1
+    PT <- P0
+    while (delta > stop_delta && step <= stop_step) {
+      PX <- (1 - r) * nadjM %*% PT + r * P0
+      delta <- sum(abs(PX - PT))
+      PT <- PX
+      step <- step + 1
     }
+    PT[PT < 1e-10] <- 0
+    PTmatrix[, 1] <- PT
   }
   PTmatrix <- sum2one(PTmatrix)
-  PTmatrix[PTmatrix < 1e-06] <- 0
-  PTmatrix <- Matrix::Matrix(PTmatrix, sparse = T)
+  PTmatrix[PTmatrix < 1e-10] <- 0
+  # PTmatrix <- Matrix::Matrix(PTmatrix, sparse = T)
   rownames(PTmatrix) <- rownames(P0matrix)
   colnames(PTmatrix) <- colnames(P0matrix)
   invisible(PTmatrix)
 }
 
-
 #' @title Heuristic solution of Maximum-weight Connected Subgraph problem
 #'
-#' @description Given a graph and a named vector of node scores, `dNetFind_alt()` heuristically finds a solution to the maximum-weight connected subgraph problem.
+#' @description Given a graph and a named vector of node scores, `heinz()` heuristically finds a solution to the maximum-weight connected subgraph problem.
 #'
 #' @details Details can be found in the _dnet_ package documentation \url{https://cran.r-project.org/web/packages/dnet/dnet.pdf}
 #'
 #' @note Adapted from the _dnet_ package. Based on method from the _BioNet_ package
-#' @param g (igraph object): input graph
-#' @param scores (vector): named vector of scores for nodes in g
+#' @param g Input graph
+#' @param scores Named vector of scores for nodes in g
 #'
-#' @return subnetwork as an igraph object
+#' @return a subnetwork as an igraph object
 #'
 #' @examples
 #' library(igraph)
@@ -914,45 +973,39 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
 #' g_scores = rnorm(100)
 #' names(g_scores) = 1:100
 #'
-#' new_g = AMEND:::dNetFind_alt(g = graph, scores = g_scores)
+#' new_g = AMEND:::heinz(g = graph, scores = g_scores)
 #'
-dNetFind_alt <- function (g, scores)
-{
+heinz <- function (g, scores){
   ig <- g
-  if (class(ig) != "igraph") {
+  if(class(ig) != "igraph"){
     stop("The function must apply to an 'igraph' object.\n")
   }
-  if (is.null(V(ig)$name)) {
+  if(is.null(V(ig)$name)){
     V(ig)$name <- as.character(V(ig))
   }
-  if (is.null(names(scores))) {
+  if(is.null(names(scores))){
     stop("The function must require the names of the input scores.\n")
-  }
-  else if (any(is.na(names(scores)))) {
+  }else if(any(is.na(names(scores)))){
     warning("Those scores with NA as names will be removed")
     scores <- scores[!is.na(names(scores))]
   }
   V(ig)$score <- scores[V(ig)$name]
-  pos.nodes <- V(ig)[V(ig)$score > 0]$name
-  if (length(pos.nodes) == 0) {
+  pos.nodes = which(V(ig)$score > 0)
+  if(length(pos.nodes) == 0){
     warning("No positive nodes")
     subgraph <- igraph::graph.empty(n = 0, directed = F)
-  }
-  else if (length(pos.nodes) == 1) {
-    subgraph <- dnet::dNetInduce(ig, pos.nodes, knn = 0, remove.loops = T,
-                           largest.comp = T)
+  }else if(length(pos.nodes) == 1){
+    subgraph = igraph::induced_subgraph(ig, pos.nodes)
     V(subgraph)$type <- "desired"
-  }
-  else {
-    pos.subgraph <- dnet::dNetInduce(ig, pos.nodes, knn = 0, remove.loops = T,
-                               largest.comp = F)
-    conn.comp.graph <- igraph::decompose.graph(pos.subgraph)
+  }else{
+    pos.subgraph = igraph::induced_subgraph(ig, pos.nodes)
+    conn.comp.graph <- igraph::decompose(pos.subgraph)
     score.comp <- unlist(lapply(lapply(conn.comp.graph,
                                        function(x) as.numeric(V(x)$score)), sum))
     ind_order <- order(score.comp, decreasing = T)
     conn.comp.graph <- conn.comp.graph[ind_order]
     score.comp <- score.comp[ind_order]
-    for (i in 1:length(conn.comp.graph)) {
+    for(i in 1:length(conn.comp.graph)){
       conn.comp.graph[[i]]$score <- score.comp[i]
     }
     v.id <- seq(1, vcount(ig))
@@ -961,30 +1014,29 @@ dNetFind_alt <- function (g, scores)
     edgelist1 <- edgelist[, 1]
     edgelist2 <- edgelist[, 2]
     #===#
+    # This for loop is changing the edgelist to treat the nodes in each meta-node as one node
     ig.size <- vcount(ig)
-    for (i in 1:length(conn.comp.graph)) {
+    for(i in 1:length(conn.comp.graph)){ # for each meta-node i
+      # change the source, target ids of all edges containing nodes in meta-node i to be the same
       new.id <- ig.size + i
-      for (j in v.id[V(conn.comp.graph[[i]])$name]) {
-        edgelist1[edgelist1 == j] <- new.id
-        edgelist2[edgelist2 == j] <- new.id
-      }
+      v.id.tmp = v.id[V(conn.comp.graph[[i]])$name]
+      edgelist1[edgelist1 %in% v.id.tmp] = new.id
+      edgelist2[edgelist2 %in% v.id.tmp] = new.id
     }
     #===#
     new.ids <- seq(vcount(ig) + 1, vcount(ig) + length(conn.comp.graph))
-    new.names <- paste("cluster", seq(1:length(conn.comp.graph)),
-                       sep = "")
+    new.names <- paste("cluster", seq(1:length(conn.comp.graph)), sep = "")
     names(new.ids) <- new.names
     v.id <- c(v.id, new.ids)
     v.name <- names(v.id)
     names(v.name) <- v.id
     new.edgelist <- cbind(v.name[as.character(edgelist1)],
                           v.name[as.character(edgelist2)])
-    mig <- igraph::graph.edgelist(new.edgelist, directed = F)
+    mig <- igraph::graph_from_edgelist(new.edgelist, directed = F)
     mig <- igraph::simplify(mig, remove.loops = T, remove.multiple = T)
     node.score <- scores[V(mig)$name]
     names(node.score) <- V(mig)$name
-    node.score.cluster <- sapply(conn.comp.graph, igraph::get.graph.attribute,
-                                 "score")
+    node.score.cluster <- sapply(conn.comp.graph, igraph::get.graph.attribute, "score")
     names(node.score.cluster) <- new.names
     ind_cluster <- grep("cluster", names(node.score))
     node.score[ind_cluster] <- node.score.cluster[names(node.score[ind_cluster])]
@@ -997,8 +1049,8 @@ dNetFind_alt <- function (g, scores)
     tmp_n1 <- igraph::get.edgelist(mig, names = F)[, 1]
     tmp_n2 <- igraph::get.edgelist(mig, names = F)[, 2]
     E(mig)$weight <- -(V(mig)[tmp_n1]$score.degree + V(mig)[tmp_n2]$score.degree)
-    if (!igraph::is.connected(mig)) {
-      decomp.graphs <- igraph::decompose.graph(mig)
+    if(!igraph::is_connected(mig)){
+      decomp.graphs <- igraph::decompose(mig)
       sum.pos <- lapply(decomp.graphs, function(x) {
         sum(node.score[names(which(node.score[V(x)$name] > 0))])
       })
@@ -1011,53 +1063,58 @@ dNetFind_alt <- function (g, scores)
     tmp <- unlist(strsplit(names(mst.cluster.id), "cluster"))
     ttmp <- as.numeric(matrix(tmp, nrow = 2)[2, ])
     mst.cluster.id <- mst.cluster.id[order(ttmp)]
-    all.ids <- c()
-    if (length(mst.cluster.id) == 1) {
+    if(length(mst.cluster.id) == 1){
       neg.node.ids.2 = c()
-    }
-    else {
+    }else{
       # Iteratively exclude all negative nodes of degree 1
       loop = TRUE
       while(loop){
         neg_deg1 = V(mst)[igraph::degree(mst) == 1 & V(mst)$score < 0]
-
         if(length(neg_deg1) == 0){
           loop = FALSE
         }else{
           mst = igraph::induced_subgraph(mst, -neg_deg1)
         }
       }
-      sub.mig <- dnet::dNetInduce(mig, V(mst)$name, knn = 0, remove.loops = T, largest.comp = F)
+      sub.mig = igraph::induced_subgraph(mig, which(V(mig)$name %in% V(mst)$name))
+      if(!igraph::is_simple(sub.mig)) sub.mig = igraph::simplify(sub.mig)
       neg.node.ids <- which(V(sub.mig)$score < 0)
-      for (i in neg.node.ids) {
+      for(i in neg.node.ids){
         tmp_nei <- igraph::neighbors(sub.mig, v = i)
         tmp_nei_meta <- grep("cluster", V(sub.mig)[tmp_nei]$name)
         V(sub.mig)[i]$clusters <- list(tmp_nei[tmp_nei_meta])
       }
       score.neg.nodes <- c()
-      for (i in neg.node.ids) {
-        if (!is.na(V(sub.mig)[i]$clusters[1])) {
+      for(i in neg.node.ids){
+        if(!is.na(V(sub.mig)[i]$clusters[1])){
           borders <- c(i, V(sub.mig)[i]$clusters)
           borders <- unlist(borders)
           score.neg.nodes <- c(score.neg.nodes, sum(V(sub.mig)[borders]$score))
-        }
-        else {
+        }else{
           score.neg.nodes <- c(score.neg.nodes, V(sub.mig)[i]$score)
         }
       }
       neg.node.ids.2 <- neg.node.ids[score.neg.nodes > 0]
     }
-    if (length(neg.node.ids.2) == 0) {
+    if(length(neg.node.ids.2) == 0){
       tmp <- unlist(strsplit(names(node.score.cluster)[which.max(node.score.cluster)], "cluster"))
       ttmp <- as.numeric(matrix(tmp, nrow = 2)[2, ])
       tmp_nodes <- unlist(lapply(conn.comp.graph, igraph::get.vertex.attribute, "name")[ttmp])
-      subgraph <- dnet::dNetInduce(ig, tmp_nodes, knn = 0, remove.loops = F,
-                             largest.comp = T)
+      subgraph = igraph::induced_subgraph(ig, which(V(ig)$name %in% tmp_nodes))
+      if(!igraph::is_connected(subgraph)){
+        clust <- igraph::components(subgraph)
+        cid <- which.max(clust$csize)
+        subgraph <- igraph::induced_subgraph(subgraph, which(clust$membership == cid))
+      }
       V(subgraph)$type <- "desired"
-    }
-    else {
-      subg <- dnet::dNetInduce(sub.mig, V(sub.mig)[neg.node.ids.2]$name,
-                         knn = 0, remove.loops = T, largest.comp = T)
+    }else{
+      subg = igraph::induced_subgraph(sub.mig, neg.node.ids.2)
+      if(!igraph::is_connected(subg)){
+        clust <- igraph::components(subg)
+        cid <- which.max(clust$csize)
+        subg <- igraph::induced_subgraph(subg, which(clust$membership == cid))
+      }
+      if(!igraph::is_simple(subg)) subg = igraph::simplify(subg)
       mst.subg <- igraph::minimum.spanning.tree(subg, E(subg)$weight)
       getPathScore <- function(path, graph1, graph2) {
         s1 <- V(graph1)[path]$score
@@ -1067,26 +1124,25 @@ dNetFind_alt <- function (g, scores)
       }
       max.score <- 0
       best.path <- c()
-      for (i in 1:vcount(mst.subg)) {
+      for(i in 1:vcount(mst.subg)){
         path <- igraph::all_shortest_paths(mst.subg, from = V(mst.subg)[i])
-        path.score <- unlist(lapply(path$res, getPathScore,
-                                    graph1 = mst.subg, graph2 = sub.mig))
+        path.score <- unlist(lapply(path$res, getPathScore, graph1 = mst.subg, graph2 = sub.mig))
         best.pos <- which.max(path.score)
-        if (path.score[[best.pos]] > max.score) {
+        if(path.score[[best.pos]] > max.score){
           best.path <- path$res[[best.pos]]
           max.score <- path.score[[best.pos]]
         }
       }
-      if (length(best.path) != 1) {
+      if(length(best.path) != 1){
         cluster.list <- V(mst.subg)[best.path]$clusters
         names.list <- as.character(1:length(cluster.list))
         names(cluster.list) <- names.list
         names(best.path) <- names.list
-        for (i in names.list) {
+        for(i in names.list){
           res <- lapply(cluster.list, intersect, cluster.list[[i]])
-          if (length(intersect(unlist(cluster.list[as.character(which(as.numeric(names.list) < as.numeric(i)))]),
-                               unlist(cluster.list[as.character(which(as.numeric(names.list) > as.numeric(i)))]))) > 0) {
-            if (length(setdiff(res[[i]], unique(unlist(res[names(res) != i])))) == 0) {
+          if(length(intersect(unlist(cluster.list[as.character(which(as.numeric(names.list) < as.numeric(i)))]),
+                              unlist(cluster.list[as.character(which(as.numeric(names.list) > as.numeric(i)))]))) > 0){
+            if(length(setdiff(res[[i]], unique(unlist(res[names(res) != i])))) == 0){
               cluster.list <- cluster.list[names(cluster.list) != i]
               names.list <- names.list[names.list != i]
             }
@@ -1097,12 +1153,15 @@ dNetFind_alt <- function (g, scores)
       pos.cluster <- V(sub.mig)[unique(unlist(V(mst.subg)[best.path]$clusters))]$name
       tmp <- unlist(strsplit(pos.cluster, "cluster"))
       ttmp <- as.numeric(matrix(tmp, nrow = 2)[2, ])
-      tmp_meta_nodes <- unlist(lapply(conn.comp.graph,
-                                      igraph::get.vertex.attribute, "name")[ttmp])
+      tmp_meta_nodes <- unlist(lapply(conn.comp.graph, igraph::get.vertex.attribute, "name")[ttmp])
       tmp_border_nodes <- V(mst.subg)[best.path]$name
       tmp_nodes <- c(tmp_border_nodes, tmp_meta_nodes)
-      subgraph <- dnet::dNetInduce(ig, tmp_nodes, knn = 0, remove.loops = F,
-                             largest.comp = T)
+      subgraph <- igraph::induced_subgraph(ig, vids = tmp_nodes)
+      if(!igraph::is_connected(subgraph)){
+        clust <- igraph::components(subgraph)
+        cid <- which.max(clust$csize)
+        subgraph <- igraph::induced_subgraph(subgraph, which(clust$membership == cid))
+      }
       type <- rep("desired", vcount(subgraph))
       names(type) <- V(subgraph)$name
       type[tmp_border_nodes[tmp_border_nodes %in% names(type)]] <- "linker"
@@ -1111,67 +1170,68 @@ dNetFind_alt <- function (g, scores)
   }
   return(subgraph)
 }
-# EDIT 1/11: added examples, added description, added details
-
 
 #' @title Exponential decay schedule for filtering rate
 #'
 #' @description Exponential decay schedule for filtering rate. Used to shift the raw RWR scores
 #'
-#' @param eta0 (numeric): starting filtering rate
-#' @param d (numeric): decay parameter
+#' @param eta0 Starting filtering rate
+#' @param d Decay parameter
 #'
 #' @return vector of filtering rates for each iteration of AMEND
 #'
 #' @examples
-#' rates = AMEND:::exp.filtering.rate(eta0 = 0.5, d = 0.2)
+#' rates = AMEND:::exp_filtering_rate(eta0 = 0.5, d = 0.2)
 #' plot(1:100, rates)
 #'
-exp.filtering.rate <- function(eta0 = 0.5, d = 0.1){
+exp_filtering_rate <- function(eta0 = 0.5, d = 0.1){
   iterations <- 1:100
   return( eta0*exp(-d*(iterations - 1)) )
 }
-# EDIT 1/11: added examples, added description
-
 
 #' @title Sets the decay value
 #'
 #' @description Finds the max decay value for an exponential filtering rate schedule that will
 #' allow the algorithm to arrive at a graph of size n.
 #'
-#' @param N (integer): Size of graph
-#' @param eta0 (numeric): starting filtering rate
-#' @param n (integer): approximate size of final module
-#' @param rate.diff (numeric): Average difference between the shifting quantile and the observed filtering
+#' @param N Size of graph
+#' @param eta0 Starting filtering rate
+#' @param n Approximate size of final module
+#' @param rate.diff Vector of differences between observed filtering rate and theoretical filtering rate
 #'
 #' @return decay value, numeric
 #'
 #' @examples
-#' d = AMEND:::find.decay(N = 1000, eta0 = 0.5, n = 50)
+#' d = AMEND:::find_decay(N = 1000, eta0 = 0.5, n = 50)
 #' d
 #'
-find.decay <- function(N, eta0 = 0.5, n = 25, rate.diff = 0.07){
+find_decay <- function(N, eta0 = 0.5, n = 25, rate.diff = 0.07){
   rate.diff = mean(rate.diff)
 
   iter <- 1:100
   d.grid <- seq(0.01, 1, 0.01)
   decay <- c()
-  k.max = 0.5
+  k.max = 0.1
+  k.min = -0.1
 
   for(j in 1:length(d.grid)){
     under <- 0
-    perc <- exp.filtering.rate(eta0 = eta0, d = d.grid[j])
+    perc <- exp_filtering_rate(eta0 = eta0, d = d.grid[j])
 
     d1 = N
     for(i in iter){
-      K = min(k.max, (rate.diff * (1 - perc[i])) / perc[i])
-      afr = perc[i] * (1 + K)
+      #= EDIT (1/19/23): This will correct behavior when perc[i] is close to 1.
+      # K = min(k.max, rate.diff / perc[i]) # previous assignment for K
+      # rate difference up, K up, AFR up, decay up, theoretical filtering rate down, larger networks
+      # rate.diff = observed minus theoretical filtering rate, so more nodes filtered out than expected, so need to push on the brakes i.e., increase decay.
+      K = max(min(k.max, (rate.diff * (1 - perc[i])) / perc[i]), k.min) # Will lead to slightly lower adjusted filtering rate (afr) --> lower decay --> larger filtering rates --> smaller networks
+      afr = perc[i] * (1 + K) # Adjusted filtering rate (AFR)
       d2 = round(d1 * (1 - afr), 0)
       if(d2 <= n){
         under <- 1
         break
       }
-      if(d1 - d2 <= 2){
+      if(d1 == d2){
         break
       }
       d1 = d2
@@ -1186,14 +1246,14 @@ find.decay <- function(N, eta0 = 0.5, n = 25, rate.diff = 0.07){
   }else return(max(decay))
 }
 
-
-#' @title Calculate the core-clustering coefficients of a graph
+#' @title Calculate the core-clustering coefficients of nodes in a graph
 #'
 #' @description `core_cc()` calculates the core-clustering coefficients of all nodes in a graph. This network concept was introduced by Bader and Hogue (2003)
 #'
 #' @details The core-clustering coefficient of a node is the density of the maximum k-core of the immediate neighborhood of that node. The k-core of a graph is the maximal subgraph in which every node has degree >= k.
 #'
-#' @param g (igraph object): input graph. Must be connected
+#' @param g Input graph. Must be connected
+#' @param weight Logical. If true, the edge density is calculated taking into account edge weights
 #'
 #' @return Vector of core-clustering coefficients for each node
 #'
@@ -1201,16 +1261,84 @@ find.decay <- function(N, eta0 = 0.5, n = 25, rate.diff = 0.07){
 #' core_clust_coefs = AMEND:::core_cc(glut4_graph)
 #' head(core_clust_coefs)
 #'
-core_cc = function(g){
-  if(!igraph::is_connected(g)) stop("Input graph must be connected")
-  w = numeric(vcount(g))
-  for(i in 1:vcount(g)){
-    nei = as.numeric(igraph::neighbors(g, i))
-    nborhood = igraph::induced_subgraph(g, c(nei, i))
+core_cc = function(g, weight = TRUE){
+  # if(!igraph::is_connected(g)) stop("Input graph must be connected")
+  if(!"weight" %in% igraph::edge_attr_names(g) && weight){
+    # warning("No \'weight\' edge attribute. Treating as unweighted.")
+    weight = FALSE
+  }
+  n = vcount(g)
+  w = numeric(n)
+  for(i in seq_len(n)){
+    nborhood = igraph::make_ego_graph(g, order = 1, nodes = i)[[1]]
     cores = igraph::coreness(nborhood)
     max_core = igraph::induced_subgraph(nborhood, which(cores == max(cores)))
-    w[i] = igraph::edge_density(max_core)
+    w[i] = edge_density_weighted(max_core, weight = weight)
   }
   return(w)
 }
-# EDIT 1/11: added examples, added description, added details
+
+#' @title Calculate the edge density of a weighted graph
+#'
+#' @description `edge_density_weighted()` calculates the edge density of a graph, taking into account edge weights.
+#'
+#' @details If weight is true, the edge density equals the sum of the edge weights divided by the maximum number of edges possible for the given graph. If weight is false, the edge density is the number of edges divided by the maximum number of edges possible for the given graph.
+#'
+#' @param graph Input graph
+#' @param weight Logical. If true, the edge density is calculated taking into account edge weights
+#'
+#' @return weighted edge density of graph
+#'
+#' @examples
+#' AMEND:::edge_density_weighted(graph = glut4_graph, weight = TRUE)
+#'
+#' AMEND:::edge_density_weighted(graph = glut4_graph, weight = FALSE)
+#'
+#' # Compare to igraph::edge_density
+#' igraph::edge_density(glut4_graph)
+#'
+#' # Remove weight attribute
+#' g = igraph::delete_edge_attr(glut4_graph, "weight")
+#' AMEND:::edge_density_weighted(graph = g, weight = TRUE)
+#'
+edge_density_weighted = function(graph, weight){
+  if(weight){
+    N = igraph::vcount(graph)
+    return(sum(igraph::E(graph)$weight) / (N * (N - 1) / 2))
+  }else return(igraph::edge_density(graph))
+}
+
+#' @title Get a larger subnetwork from previous iterations of AMEND
+#'
+#' @description
+#'
+#' The AMEND algorithm implemented in 'run_AMEND()' may overshoot the approximate final module size, or the user may be interested in the parent subnetworks of the final module. This function allows the user to examine intermediate subnetworks that were generated during 'run_AMEND()'.
+#'
+#' @param amend_object Result from `run_AMEND()`
+#' @param k Iteration associated with the subnetwork you want to retrieve
+#'
+#' @examples
+#' # Attach igraph library
+#' library(igraph)
+#'
+#' # Inspect the igraph object included in AMEND package.
+#' # One can see it has vertex attributes name, symbol, and ECI
+#' glut4_graph
+#' head(V(glut4_graph)$ECI)
+#'
+#' # Use run_AMEND() with an igraph object with a vertex attribute matching data.type arg
+#' subnet1 = run_AMEND(graph = glut4_graph, data.type = "ECI", DOI = "negative")
+#'
+#' # Inspect the statistics of the intermediate subnetworks
+#' subnet1$stats
+#'
+#' # Retrieve the subnetwork of iteration 7
+#' subnet7 = get_subnetwork(subnet1, 7)
+#' subnet7
+#'
+#' @export
+get_subnetwork = function(amend_object, k){
+  ig = amend_object$input_params$ig
+  nodes = amend_object$subnetworks[[k]]
+  igraph::induced_subgraph(ig, which(V(ig)$name %in% nodes))
+}

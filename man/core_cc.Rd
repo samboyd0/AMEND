@@ -2,12 +2,14 @@
 % Please edit documentation in R/main.R
 \name{core_cc}
 \alias{core_cc}
-\title{Calculate the core-clustering coefficients of a graph}
+\title{Calculate the core-clustering coefficients of nodes in a graph}
 \usage{
-core_cc(g)
+core_cc(g, weight = TRUE)
 }
 \arguments{
-\item{g}{(igraph object): input graph. Must be connected}
+\item{g}{Input graph. Must be connected}
+
+\item{weight}{Logical. If true, the edge density is calculated taking into account edge weights}
 }
 \value{
 Vector of core-clustering coefficients for each node

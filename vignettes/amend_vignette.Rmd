@@ -10,6 +10,15 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+<!---
+Run this code to locally knit the vignette.
+knitr::knit("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/markdown_files/amend_vignette_local.Rmd.orig", 
+            output = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/amend_vignette.Rmd")
+
+Resource:
+https://ropensci.org/blog/2019/12/08/precompute-vignettes/
+--->
+
 
 
 
@@ -24,7 +33,7 @@ A key concept in AMEND is the filtering rate, which determines how the untreated
 
 The decay parameter determines the rate at which the shifting quantile decreases. This value is determined by simulation. The decay is set to the maximum value that will allow the algorithm to arrive at a subnetwork of size $n$. If the decay is too large, the filtering rate will approach zero too quickly. This causes the algorithm to stop early since no nodes will be removed with a filtering rate of zero. The parameter $n$ is set by the user and approximates the size of the final module. 
 
-The primary function is `run_AMEND()`, which determines the optimal starting filtering rate by particle swarm optimization (PSO) if no value is given, and then implements the AMEND algorithm with this starting filtering rate, returning a connected subnetwork.  
+The primary function is `run_AMEND()`, which implements the AMEND algorithm and returns a connected subnetwork. 
 
 # Installation
 
@@ -49,8 +58,9 @@ The dataset that will be used here is a GLUT4 knockout-overexpression (KO-OX) mi
 gse1 <- GEOquery::getGEO("GSE35378", GSEMatrix = TRUE)
 #> Found 1 file(s)
 #> GSE35378_series_matrix.txt.gz
+#> Using locally cached version: /var/folders/fy/htp6vm7s2y92hk7hh6110p840000gn/T//RtmpOrzsN6/GSE35378_series_matrix.txt.gz
 #> 
-#> ── Column specification ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+#> ── Column specification ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 #> cols(
 #>   ID_REF = col_character(),
 #>   GSM867144 = col_double(),
@@ -66,8 +76,8 @@ gse1 <- GEOquery::getGEO("GSE35378", GSEMatrix = TRUE)
 #>   GSM867154 = col_double(),
 #>   GSM867155 = col_double()
 #> )
-#> File stored at:
-#> /var/folders/fy/htp6vm7s2y92hk7hh6110p840000gn/T//Rtmp9He2FR/GPL81.soft
+#> Using locally cached version of GPL81 found here:
+#> /var/folders/fy/htp6vm7s2y92hk7hh6110p840000gn/T//RtmpOrzsN6/GPL81.soft
 #> Warning: 66 parsing failures.
 #>   row     col           expected    actual         file
 #> 12423 SPOT_ID 1/0/T/F/TRUE/FALSE --Control literal data
@@ -94,7 +104,7 @@ AMEND was developed to accommodate a recently introduced metric, the equivalent 
 
 ## Differential Expression Analysis 
 
-This section will show the steps taken to generate the ECIs and log fold changes for the GLUT4 dataset. Preprocessing involves background subtracting and normalizing, as well as checking for zero sample variances. 
+This section will show the steps taken to generate the log fold changes and ECIs for the GLUT4 dataset. Preprocessing involves background subtracting and normalizing, as well as checking for zero sample variances. 
 
 
 ```r
@@ -204,7 +214,8 @@ For this example, a _mus musculus_ PPI network is downloaded from STRING (v11.0)
 ```r
 # Getting mapping between Mouse Gene Symbols <--> Ensembl Peptide IDs
 gene_symbols <- row.names(dat)
-ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+# ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://feb2023.archive.ensembl.org")
 mapping <- biomaRt::getBM(attributes=c("mgi_symbol", "ensembl_peptide_id"),
                           filters = "mgi_symbol",
                           values = gene_symbols,
@@ -274,17 +285,17 @@ if(!igraph::is_connected(glut4_graph)){
 igraph::V(glut4_graph)$ECI = dat$ECI[match(igraph::V(glut4_graph)$symbol, row.names(dat))]
 igraph::V(glut4_graph)$logFC = datFC$logFC[match(igraph::V(glut4_graph)$symbol, row.names(datFC))]
 glut4_graph
-#> IGRAPH 475042f UNW- 6435 120608 -- 
+#> IGRAPH e16d5e7 UNW- 6422 120546 -- 
 #> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), weight (e/n)
-#> + edges from 475042f (vertex names):
-#>  [1] ENSMUSP00000000001--ENSMUSP00000017460 ENSMUSP00000000001--ENSMUSP00000039107 ENSMUSP00000000001--ENSMUSP00000052894 ENSMUSP00000000001--ENSMUSP00000025842
-#>  [5] ENSMUSP00000000001--ENSMUSP00000045335 ENSMUSP00000000001--ENSMUSP00000093978 ENSMUSP00000000001--ENSMUSP00000040847 ENSMUSP00000000001--ENSMUSP00000066822
-#>  [9] ENSMUSP00000000001--ENSMUSP00000076155 ENSMUSP00000000001--ENSMUSP00000052444 ENSMUSP00000000001--ENSMUSP00000052581 ENSMUSP00000000001--ENSMUSP00000053489
-#> [13] ENSMUSP00000000001--ENSMUSP00000028883 ENSMUSP00000000001--ENSMUSP00000045911 ENSMUSP00000000001--ENSMUSP00000137518 ENSMUSP00000000001--ENSMUSP00000047586
-#> [17] ENSMUSP00000000001--ENSMUSP00000068731 ENSMUSP00000000001--ENSMUSP00000024004 ENSMUSP00000000001--ENSMUSP00000005406 ENSMUSP00000000001--ENSMUSP00000065799
-#> [21] ENSMUSP00000000001--ENSMUSP00000031146 ENSMUSP00000000001--ENSMUSP00000074885 ENSMUSP00000000001--ENSMUSP00000038884 ENSMUSP00000000001--ENSMUSP00000065000
-#> [25] ENSMUSP00000000001--ENSMUSP00000053638 ENSMUSP00000000001--ENSMUSP00000019074 ENSMUSP00000000001--ENSMUSP00000093311 ENSMUSP00000000001--ENSMUSP00000063136
-#> [29] ENSMUSP00000000001--ENSMUSP00000127024 ENSMUSP00000000001--ENSMUSP00000047646 ENSMUSP00000000001--ENSMUSP00000063986 ENSMUSP00000000001--ENSMUSP00000030815
+#> + edges from e16d5e7 (vertex names):
+#>  [1] ENSMUSP00000000001--ENSMUSP00000017460 ENSMUSP00000000001--ENSMUSP00000039107 ENSMUSP00000000001--ENSMUSP00000052894
+#>  [4] ENSMUSP00000000001--ENSMUSP00000025842 ENSMUSP00000000001--ENSMUSP00000045335 ENSMUSP00000000001--ENSMUSP00000093978
+#>  [7] ENSMUSP00000000001--ENSMUSP00000040847 ENSMUSP00000000001--ENSMUSP00000066822 ENSMUSP00000000001--ENSMUSP00000076155
+#> [10] ENSMUSP00000000001--ENSMUSP00000052444 ENSMUSP00000000001--ENSMUSP00000052581 ENSMUSP00000000001--ENSMUSP00000053489
+#> [13] ENSMUSP00000000001--ENSMUSP00000028883 ENSMUSP00000000001--ENSMUSP00000045911 ENSMUSP00000000001--ENSMUSP00000137518
+#> [16] ENSMUSP00000000001--ENSMUSP00000047586 ENSMUSP00000000001--ENSMUSP00000068731 ENSMUSP00000000001--ENSMUSP00000024004
+#> [19] ENSMUSP00000000001--ENSMUSP00000005406 ENSMUSP00000000001--ENSMUSP00000065799 ENSMUSP00000000001--ENSMUSP00000031146
+#> [22] ENSMUSP00000000001--ENSMUSP00000074885 ENSMUSP00000000001--ENSMUSP00000038884 ENSMUSP00000000001--ENSMUSP00000065000
 #> + ... omitted several edges
 ```
 
@@ -304,54 +315,51 @@ glut4_adjM[1:6,1:6]
 #> ENSMUSP00000025842              0.904              0.932              0.905              0.906              .                  0.905
 #> ENSMUSP00000045335              0.916              0.901              0.900              0.901              0.905              .
 
-# Creating vector of gene-wise experimental scores
+# Creating named vectors of gene-wise experimental scores
 eci_scores = igraph::V(glut4_graph)$ECI
 logFC_KO = igraph::V(glut4_graph)$logFC
+names(eci_scores) = names(logFC_KO) = igraph::V(glut4_graph)$name
 head(eci_scores)
-#> [1]  0.0053260160 -0.1573755452 -0.0666034318  0.3836840933  0.0127265124 -0.0009255554
+#> ENSMUSP00000000001 ENSMUSP00000017460 ENSMUSP00000039107 ENSMUSP00000052894 ENSMUSP00000025842 ENSMUSP00000045335 
+#>       0.0053260160      -0.1573755452      -0.0666034318       0.3836840933       0.0127265124      -0.0009255554
 head(logFC_KO)
-#> [1]  0.0004979644 -0.1002514365  0.0091279150  0.1068692232 -0.1118967908 -0.0078257876
+#> ENSMUSP00000000001 ENSMUSP00000017460 ENSMUSP00000039107 ENSMUSP00000052894 ENSMUSP00000025842 ENSMUSP00000045335 
+#>       0.0004979644      -0.1002514365       0.0091279150       0.1068692232      -0.1118967908      -0.0078257876
 ```
 
 ## Running AMEND with ECI
 
 Now that we have analyzed our microarray data and obtained a PPI network, we can continue with the active module identification step. It is important to clarify the biological question of interset that we want to answer. For the GLUT4 KO-OX experiment, it may be of interest to know which genes are affected in opposing ways by the two treatments. A gene that is up-regulated in the KO-control arm and down-regulated in the OX-control arm suggests a close association of that gene with GLUT4.
-The ECI is well suited to answer this type of question. Since we are interested in inversely regulated genes, we will want to set `data.type = "ECI"` and `eci.direction = "negative"`. We will set `n = 25` to specify the approximate size of the final module.
+The ECI is well suited to answer this type of question. Since we are interested in inversely regulated genes, we will want to set `data.type = "ECI"` and `DOI = "negative"`. We will set `n = 25` to specify the approximate size of the final module.
 
-The `normalize` argument specifies how to normalize the adjacency matrix for random walk with restart (RWR). `normalize = "core"` will use node coreness to normalize the adjacecy matrix. The seed.weight argument specifies how to transform the ECI values for use as seed values in RWR. Seed values must be non-negative, but ECI has a range of $[-1,1]$, necessitating some transformation. The scheme used in AMEND is to take the absolute value of the ECIs, then weight the values _not_ in the direction of interest by some constant in $[0,1]$. For example, when interested in negative ECIs, $seed.weight = 0.5$ translates into weighting a positive ECI gene half that of a negative ECI gene of equal magnitude. 
+The `normalize` argument specifies how to normalize the adjacency matrix for random walk with restart (RWR). `normalize = "core"` will use node coreness to normalize the adjacecy matrix, whereas `normalize = "degree"` will column normalize the adjacency matrix using node degree. The seed.weight argument specifies how to transform the ECI values for use as seed values in RWR. Seed values must be non-negative, but ECI has a range of $[-1,1]$, necessitating some transformation. The scheme used in AMEND is to take the absolute value of the ECIs, then weight the values _not_ in the direction of interest by some constant in $[0,1]$. For example, when interested in negative ECIs, $seed.weight = 0.5$ translates into weighting a positive ECI gene half that of a negative ECI gene of equal magnitude. 
 
 
 ```r
 # Using the igraph object as input
-module = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", eci.direction = "negative", 
-                   normalize = "core", seed.weight = 0.5, random_seed = 1)
-#> S=3, K=3, p=0.7037, w0=0.729, w1=0.729, c.p=1.494, c.g=1.494
-#> v.max=0.5, d=0.6, vectorize=FALSE, hybrid=off
-#> Starting filtering rate: 0.359
-#> *** Converged! ***
-#> Starting filtering rate: 0.423
-#> *** Converged! ***
-#> Starting filtering rate: 0.544
-#> *** Converged! ***
-#> Starting filtering rate: 0.349
-#> *** Converged! ***
-#> Starting filtering rate: 0.682
-#> *** Converged! ***
-#> Starting filtering rate: 0.631
-#> *** Converged! ***
-#> Starting filtering rate: 0.8
-#> *** Converged! ***
-#> Starting filtering rate: 0.39
-#> *** Converged! ***
-#> Starting filtering rate: 0.76
-#> *** Converged! ***
-#> Maximal number of iterations reached
-#> *** Converged! ***
+module = run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", DOI = "negative", 
+                   normalize = "degree", seed.weight = 0.5)
+#> Starting filtering rate: 0.6267
+#> Iteration: 1
+#> Iteration: 2
+#> Iteration: 3
+#> Iteration: 4
+#> Iteration: 5
+#> Iteration: 6
+#> Iteration: 7
+#> Iteration: 8
+#> Iteration: 9
+#> Iteration: 10
+#> *** Converged! *** ID=1
+# module = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", DOI = "negative", 
+#                    normalize = "core", seed.weight = 0.5)
 
 # Can also use the adjacency matrix and vector of node scores
 if(0){
-  module = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
-                     eci.direction = "negative", normalize = "core", seed.weight = 0.5, random_seed = 1)
+  module = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
+                     DOI = "negative", normalize = "degree", seed.weight = 0.5)
+  # module = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
+  #                    eci.direction = "negative", normalize = "core", seed.weight = 0.5)
 }
 ```
 
@@ -361,73 +369,70 @@ Let's inspect the module returned by `run_AMEND()`. A named list is returned con
 ```r
 # The final module
 module$module
-#> IGRAPH 8a5ddda UNWB 25 40 -- 
-#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), score (v/n), type (v/c), weight (e/n)
-#> + edges from 8a5ddda (vertex names):
-#>  [1] ENSMUSP00000076155--ENSMUSP00000047586 ENSMUSP00000076155--ENSMUSP00000047646 ENSMUSP00000047586--ENSMUSP00000047646 ENSMUSP00000076155--ENSMUSP00000058040
-#>  [5] ENSMUSP00000047586--ENSMUSP00000058040 ENSMUSP00000047646--ENSMUSP00000058040 ENSMUSP00000076155--ENSMUSP00000024988 ENSMUSP00000047586--ENSMUSP00000024988
-#>  [9] ENSMUSP00000047646--ENSMUSP00000024988 ENSMUSP00000058040--ENSMUSP00000024988 ENSMUSP00000076155--ENSMUSP00000021346 ENSMUSP00000047586--ENSMUSP00000021346
-#> [13] ENSMUSP00000024988--ENSMUSP00000086795 ENSMUSP00000024988--ENSMUSP00000032825 ENSMUSP00000086795--ENSMUSP00000032825 ENSMUSP00000024988--ENSMUSP00000002979
-#> [17] ENSMUSP00000086795--ENSMUSP00000002979 ENSMUSP00000032825--ENSMUSP00000002979 ENSMUSP00000076155--ENSMUSP00000027812 ENSMUSP00000024988--ENSMUSP00000041250
-#> [21] ENSMUSP00000024988--ENSMUSP00000065393 ENSMUSP00000041250--ENSMUSP00000065393 ENSMUSP00000065393--ENSMUSP00000095316 ENSMUSP00000047646--ENSMUSP00000028259
-#> [25] ENSMUSP00000047646--ENSMUSP00000032198 ENSMUSP00000028259--ENSMUSP00000032198 ENSMUSP00000002979--ENSMUSP00000099935 ENSMUSP00000024988--ENSMUSP00000020549
-#> [29] ENSMUSP00000095316--ENSMUSP00000103007 ENSMUSP00000095316--ENSMUSP00000031897 ENSMUSP00000095316--ENSMUSP00000020284 ENSMUSP00000031897--ENSMUSP00000020284
+#> IGRAPH 195bf0e UNW- 41 58 -- 
+#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), weight (e/n)
+#> + edges from 195bf0e (vertex names):
+#>  [1] ENSMUSP00000076155--ENSMUSP00000047586 ENSMUSP00000076155--ENSMUSP00000047646 ENSMUSP00000047586--ENSMUSP00000047646
+#>  [4] ENSMUSP00000076155--ENSMUSP00000058040 ENSMUSP00000047586--ENSMUSP00000058040 ENSMUSP00000047646--ENSMUSP00000058040
+#>  [7] ENSMUSP00000033131--ENSMUSP00000021141 ENSMUSP00000021141--ENSMUSP00000139275 ENSMUSP00000033131--ENSMUSP00000059889
+#> [10] ENSMUSP00000076155--ENSMUSP00000103981 ENSMUSP00000047586--ENSMUSP00000103981 ENSMUSP00000076155--ENSMUSP00000021346
+#> [13] ENSMUSP00000047586--ENSMUSP00000021346 ENSMUSP00000133117--ENSMUSP00000086795 ENSMUSP00000133117--ENSMUSP00000032825
+#> [16] ENSMUSP00000086795--ENSMUSP00000032825 ENSMUSP00000133117--ENSMUSP00000041250 ENSMUSP00000041250--ENSMUSP00000065393
+#> [19] ENSMUSP00000065393--ENSMUSP00000095316 ENSMUSP00000047646--ENSMUSP00000028259 ENSMUSP00000047646--ENSMUSP00000032198
+#> [22] ENSMUSP00000028259--ENSMUSP00000032198 ENSMUSP00000095316--ENSMUSP00000115578 ENSMUSP00000070019--ENSMUSP00000105179
 #> + ... omitted several edges
 
 # data.frame of network stats for all iterations
 module$stats
-#>   Decay Restart parameter Network score Avg Z Avg CCC Nodes Edges Density Filtering rate Observed filtering rate Seed weight
-#> 1  0.28             0.990         0.456 0.483   0.943  1249  6694   0.009          0.760                   0.806         0.5
-#> 2  0.28             0.990         1.167 1.245   0.938   416  1303   0.015          0.574                   0.667         0.5
-#> 3  0.28             0.990         1.913 2.039   0.938   193   444   0.024          0.434                   0.536         0.5
-#> 4  0.28             0.932         2.238 2.349   0.953   123   257   0.034          0.328                   0.363         0.5
-#> 5  0.28             0.851         2.325 2.432   0.956    92   178   0.043          0.248                   0.252         0.5
-#> 6  0.28             0.920         2.364 2.482   0.952    54   106   0.074          0.187                   0.413         0.5
-#> 7  0.28             0.990         2.523 2.523   1.000    27    49   0.140          0.142                   0.500         0.5
-#> 8  0.28             0.897         2.533 2.533   1.000    26    45   0.138          0.107                   0.037         0.5
-#> 9  0.28             0.897         2.541 2.541   1.000    25    40   0.133          0.081                   0.038         0.5
+#>   Decay Restart parameter Network score Avg Z Avg CCC Nodes Edges Density Filtering rate Observed filtering rate
+#> 1  0.16              0.75         0.188 0.216   0.868  2269 24893   0.010          0.627                   0.647
+#> 2  0.16              0.95         0.658 0.760   0.865   856  4037   0.011          0.534                   0.623
+#> 3  0.16              0.85         1.151 1.329   0.866   435  1672   0.018          0.455                   0.492
+#> 4  0.17              0.95         1.589 1.874   0.848   227   516   0.020          0.384                   0.478
+#> 5  0.18              0.95         1.982 2.315   0.856   126   250   0.032          0.321                   0.445
+#> 6  0.19              0.95         2.108 2.467   0.855    86   143   0.039          0.265                   0.317
+#> 7  0.21              0.70         2.151 2.504   0.859    66   113   0.053          0.215                   0.233
+#> 8  0.22              0.85         2.158 2.575   0.838    50    80   0.065          0.173                   0.242
+#> 9  0.22              0.85         2.158 2.599   0.830    41    58   0.071          0.138                   0.180
 
 # Runtime
 module$time
-#> Time difference of 34.47288 mins
+#> Time difference of 1.833622 mins
 ```
 
 ## Running AMEND with log fold change 
 
-AMEND can also accommodate log fold changes. We have log fold changes for the GLUT4 KO vs. control DE analysis. Suppose we are interested in genes with large log fold changes, regardless of direction. Then we would set `data.type = "logFC"` and `logFC.direction = "both"`.
+AMEND can also accommodate log fold changes. We have log fold changes for the GLUT4 KO vs. control DE analysis. Suppose we are interested in genes with large log fold changes, regardless of direction. Then we would set `data.type = "logFC"` and `DOI = "both"`.
 
 
 ```r
 # Using the igraph object as input
-module2 = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", logFC.direction = "both", 
-                   normalize = "core", seed.weight = 0.5, random_seed = 1)
-#> S=3, K=3, p=0.7037, w0=0.729, w1=0.729, c.p=1.494, c.g=1.494
-#> v.max=0.5, d=0.6, vectorize=FALSE, hybrid=off
-#> Starting filtering rate: 0.359
-#> *** Converged! ***
-#> Starting filtering rate: 0.423
-#> *** Converged! ***
-#> Starting filtering rate: 0.544
-#> *** Converged! ***
-#> Starting filtering rate: 0.455
-#> *** Converged! ***
-#> Starting filtering rate: 0.686
-#> *** Converged! ***
-#> Starting filtering rate: 0.659
-#> *** Converged! ***
-#> Starting filtering rate: 0.8
-#> *** Converged! ***
-#> Starting filtering rate: 0.747
-#> *** Converged! ***
-#> Starting filtering rate: 0.771
-#> *** Converged! ***
-#> Maximal number of iterations reached
-#> *** Converged! ***
+module2 = run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", DOI = "both", 
+                   normalize = "degree", seed.weight = 0.5)
+#> Starting filtering rate: 0.6267
+#> Iteration: 1
+#> Iteration: 2
+#> Iteration: 3
+#> Iteration: 4
+#> Iteration: 5
+#> Iteration: 6
+#> Iteration: 7
+#> Iteration: 8
+#> Iteration: 9
+#> Iteration: 10
+#> Iteration: 11
+#> Iteration: 12
+#> Iteration: 13
+#> *** Converged! *** ID=1
+# module2 = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", logFC.direction = "both", 
+#                    normalize = "core", seed.weight = 0.5)
 
 # Can also use the adjacency matrix and vector of node scores
 if(0){
-  module2 = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
-                      logFC.direction = "both", normalize = "core", seed.weight = 0.5, random_seed = 1)
+  module2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
+                      DOI = "both", normalize = "degree", seed.weight = 0.5)
+  # module2 = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
+  #                     logFC.direction = "both", normalize = "core", seed.weight = 0.5)
 }
 ```
 
@@ -437,46 +442,97 @@ Here are the results.
 ```r
 # The final module
 module2$module
-#> IGRAPH 58295a5 UNWB 17 31 -- 
-#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), score (v/n), type (v/c), weight (e/n)
-#> + edges from 58295a5 (vertex names):
-#>  [1] ENSMUSP00000053489--ENSMUSP00000024004 ENSMUSP00000053489--ENSMUSP00000099423 ENSMUSP00000024004--ENSMUSP00000099423 ENSMUSP00000053489--ENSMUSP00000001008
-#>  [5] ENSMUSP00000099423--ENSMUSP00000001008 ENSMUSP00000108367--ENSMUSP00000132226 ENSMUSP00000108367--ENSMUSP00000093101 ENSMUSP00000132226--ENSMUSP00000093101
-#>  [9] ENSMUSP00000053489--ENSMUSP00000026845 ENSMUSP00000099423--ENSMUSP00000026845 ENSMUSP00000001008--ENSMUSP00000026845 ENSMUSP00000108367--ENSMUSP00000026845
-#> [13] ENSMUSP00000132226--ENSMUSP00000026845 ENSMUSP00000093101--ENSMUSP00000026845 ENSMUSP00000108367--ENSMUSP00000082130 ENSMUSP00000132226--ENSMUSP00000082130
-#> [17] ENSMUSP00000093101--ENSMUSP00000082130 ENSMUSP00000026845--ENSMUSP00000082130 ENSMUSP00000132226--ENSMUSP00000032203 ENSMUSP00000093101--ENSMUSP00000032203
-#> [21] ENSMUSP00000082130--ENSMUSP00000032203 ENSMUSP00000099423--ENSMUSP00000025691 ENSMUSP00000099423--ENSMUSP00000017799 ENSMUSP00000026845--ENSMUSP00000017799
-#> [25] ENSMUSP00000017799--ENSMUSP00000107214 ENSMUSP00000108367--ENSMUSP00000022592 ENSMUSP00000026845--ENSMUSP00000022592 ENSMUSP00000017799--ENSMUSP00000022592
-#> [29] ENSMUSP00000132226--ENSMUSP00000073695 ENSMUSP00000026845--ENSMUSP00000092492 ENSMUSP00000032203--ENSMUSP00000000924
+#> IGRAPH 85827db UNW- 42 77 -- 
+#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), weight (e/n)
+#> + edges from 85827db (vertex names):
+#>  [1] ENSMUSP00000053489--ENSMUSP00000024004 ENSMUSP00000053489--ENSMUSP00000065799 ENSMUSP00000024004--ENSMUSP00000065799
+#>  [4] ENSMUSP00000053489--ENSMUSP00000074885 ENSMUSP00000024004--ENSMUSP00000074885 ENSMUSP00000065799--ENSMUSP00000074885
+#>  [7] ENSMUSP00000053489--ENSMUSP00000052185 ENSMUSP00000024004--ENSMUSP00000052185 ENSMUSP00000065799--ENSMUSP00000052185
+#> [10] ENSMUSP00000074885--ENSMUSP00000052185 ENSMUSP00000053489--ENSMUSP00000001008 ENSMUSP00000074885--ENSMUSP00000001008
+#> [13] ENSMUSP00000065799--ENSMUSP00000056774 ENSMUSP00000079380--ENSMUSP00000056774 ENSMUSP00000053489--ENSMUSP00000001780
+#> [16] ENSMUSP00000056774--ENSMUSP00000001780 ENSMUSP00000036044--ENSMUSP00000108367 ENSMUSP00000036044--ENSMUSP00000093101
+#> [19] ENSMUSP00000108367--ENSMUSP00000093101 ENSMUSP00000036044--ENSMUSP00000001927 ENSMUSP00000108367--ENSMUSP00000001927
+#> [22] ENSMUSP00000093101--ENSMUSP00000001927 ENSMUSP00000053489--ENSMUSP00000026845 ENSMUSP00000074885--ENSMUSP00000026845
+#> + ... omitted several edges
 
 # data.frame of network stats for all iterations
 module2$stats
-#>    Decay Restart parameter Network score Avg Z Avg CCC Nodes Edges Density Filtering rate Observed filtering rate Seed weight
-#> 1   0.28             0.990         1.141 1.230   0.928  1222  7311   0.010          0.771                   0.810         0.5
-#> 2   0.28             0.990         2.199 2.379   0.924   398  1410   0.018          0.583                   0.674         0.5
-#> 3   0.28             0.990         3.200 3.425   0.934   176   523   0.034          0.440                   0.558         0.5
-#> 4   0.28             0.944         3.991 4.223   0.945   108   327   0.057          0.333                   0.386         0.5
-#> 5   0.28             0.897         4.485 4.740   0.946    72   195   0.076          0.252                   0.333         0.5
-#> 6   0.28             0.758         4.837 4.965   0.974    58   159   0.096          0.190                   0.194         0.5
-#> 7   0.28             0.804         5.098 5.233   0.974    49   124   0.105          0.144                   0.155         0.5
-#> 8   0.28             0.990         5.267 5.315   0.991    48   121   0.107          0.109                   0.020         0.5
-#> 9   0.28             0.851         5.421 5.614   0.965    40    95   0.122          0.082                   0.167         0.5
-#> 10  0.28             0.967         5.611 5.777   0.971    38    83   0.118          0.062                   0.050         0.5
-#> 11  0.28             0.897         5.854 6.022   0.972    27    68   0.194          0.047                   0.289         0.5
-#> 12  0.28             0.851         6.028 6.106   0.987    26    62   0.191          0.035                   0.037         0.5
-#> 13  0.28             0.804         6.081 6.163   0.987    25    60   0.200          0.027                   0.038         0.5
-#> 14  0.28             0.804         6.123 6.209   0.986    24    59   0.214          0.020                   0.040         0.5
-#> 15  0.28             0.804         6.161 6.252   0.986    23    58   0.229          0.015                   0.042         0.5
-#> 16  0.28             0.711         6.194 6.289   0.985    22    57   0.247          0.012                   0.043         0.5
-#> 17  0.28             0.665         6.211 6.312   0.984    21    56   0.267          0.009                   0.045         0.5
-#> 18  0.28             0.944         6.306 6.605   0.955    20    45   0.237          0.007                   0.048         0.5
-#> 19  0.28             0.897         6.649 6.767   0.982    19    41   0.240          0.005                   0.050         0.5
-#> 20  0.28             0.711         6.813 6.942   0.981    18    36   0.235          0.004                   0.053         0.5
-#> 21  0.28             0.897         7.022 7.163   0.980    17    31   0.228          0.003                   0.056         0.5
+#>    Decay Restart parameter Network score Avg Z Avg CCC Nodes Edges Density Filtering rate Observed filtering rate
+#> 1   0.16              0.95         0.600 0.694   0.864  2276 29595   0.011          0.627                   0.646
+#> 2   0.16              0.95         1.274 1.488   0.857   983  6175   0.013          0.534                   0.568
+#> 3   0.16              0.95         1.944 2.262   0.860   491  2145   0.018          0.455                   0.501
+#> 4   0.16              0.95         2.563 3.000   0.855   253   911   0.029          0.388                   0.485
+#> 5   0.17              0.95         3.150 3.711   0.849   164   483   0.036          0.327                   0.352
+#> 6   0.18              0.95         3.745 4.272   0.877   114   296   0.046          0.273                   0.305
+#> 7   0.18              0.90         4.102 4.702   0.872    80   196   0.062          0.228                   0.298
+#> 8   0.19              0.95         4.452 5.017   0.887    69   132   0.056          0.189                   0.138
+#> 9   0.20              0.50         4.630 5.203   0.890    58   118   0.071          0.155                   0.159
+#> 10  0.18              0.65         4.832 5.414   0.893    50    97   0.079          0.129                   0.138
+#> 11  0.18              0.65         4.956 5.537   0.895    44    82   0.087          0.108                   0.120
+#> 12  0.18              0.70         5.002 5.590   0.895    42    77   0.089          0.090                   0.045
 
 # Runtime
 module2$time
-#> Time difference of 21.80668 mins
+#> Time difference of 47.09602 secs
 ```
+
+Suppose that we want to investigate an intermediate subnetwork that was generated during `run_AMEND()`, either because the final module was too small or because we want to see which genes were filtered out. From the output of `module2$stats`, let's choose the subnetwork from iteration 6. We can retrieve this subnetwork by using the function `get_subnetwork()`. We can also look at the nodes in this subnetwork directly from the `module2` object.
+
+
+```r
+# Using get_subnetwork()
+subnet6 = get_subnetwork(amend_object = module2, k = 6)
+subnet6
+#> IGRAPH f1d9b15 UNW- 114 296 -- 
+#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), weight (e/n)
+#> + edges from f1d9b15 (vertex names):
+#>  [1] ENSMUSP00000053489--ENSMUSP00000047586 ENSMUSP00000053489--ENSMUSP00000024004 ENSMUSP00000047586--ENSMUSP00000024004
+#>  [4] ENSMUSP00000053489--ENSMUSP00000065799 ENSMUSP00000047586--ENSMUSP00000065799 ENSMUSP00000024004--ENSMUSP00000065799
+#>  [7] ENSMUSP00000053489--ENSMUSP00000074885 ENSMUSP00000047586--ENSMUSP00000074885 ENSMUSP00000024004--ENSMUSP00000074885
+#> [10] ENSMUSP00000065799--ENSMUSP00000074885 ENSMUSP00000053489--ENSMUSP00000052185 ENSMUSP00000047586--ENSMUSP00000052185
+#> [13] ENSMUSP00000024004--ENSMUSP00000052185 ENSMUSP00000065799--ENSMUSP00000052185 ENSMUSP00000074885--ENSMUSP00000052185
+#> [16] ENSMUSP00000053489--ENSMUSP00000083656 ENSMUSP00000047586--ENSMUSP00000083656 ENSMUSP00000024004--ENSMUSP00000083656
+#> [19] ENSMUSP00000065799--ENSMUSP00000083656 ENSMUSP00000074885--ENSMUSP00000083656 ENSMUSP00000052185--ENSMUSP00000083656
+#> [22] ENSMUSP00000047586--ENSMUSP00000025912 ENSMUSP00000065799--ENSMUSP00000025912 ENSMUSP00000053489--ENSMUSP00000000193
+#> + ... omitted several edges
+
+# Directly from module2
+module2$subnetworks[[6]]
+#>   [1] "ENSMUSP00000053489" "ENSMUSP00000047586" "ENSMUSP00000024004" "ENSMUSP00000065799" "ENSMUSP00000074885" "ENSMUSP00000052185" "ENSMUSP00000083656"
+#>   [8] "ENSMUSP00000025912" "ENSMUSP00000000193" "ENSMUSP00000001008" "ENSMUSP00000079380" "ENSMUSP00000098786" "ENSMUSP00000092393" "ENSMUSP00000032520"
+#>  [15] "ENSMUSP00000064255" "ENSMUSP00000029400" "ENSMUSP00000056774" "ENSMUSP00000033730" "ENSMUSP00000031172" "ENSMUSP00000132166" "ENSMUSP00000049852"
+#>  [22] "ENSMUSP00000001780" "ENSMUSP00000073875" "ENSMUSP00000043376" "ENSMUSP00000036044" "ENSMUSP00000108367" "ENSMUSP00000093101" "ENSMUSP00000001927"
+#>  [29] "ENSMUSP00000026845" "ENSMUSP00000082130" "ENSMUSP00000130979" "ENSMUSP00000030044" "ENSMUSP00000032203" "ENSMUSP00000014578" "ENSMUSP00000020161"
+#>  [36] "ENSMUSP00000099534" "ENSMUSP00000028466" "ENSMUSP00000017610" "ENSMUSP00000090884" "ENSMUSP00000026499" "ENSMUSP00000007253" "ENSMUSP00000017799"
+#>  [43] "ENSMUSP00000097547" "ENSMUSP00000115578" "ENSMUSP00000031280" "ENSMUSP00000102009" "ENSMUSP00000032201" "ENSMUSP00000112765" "ENSMUSP00000000369"
+#>  [50] "ENSMUSP00000104298" "ENSMUSP00000004986" "ENSMUSP00000019362" "ENSMUSP00000126092" "ENSMUSP00000030212" "ENSMUSP00000034602" "ENSMUSP00000079553"
+#>  [57] "ENSMUSP00000075074" "ENSMUSP00000098256" "ENSMUSP00000059270" "ENSMUSP00000027601" "ENSMUSP00000079124" "ENSMUSP00000093462" "ENSMUSP00000106017"
+#>  [64] "ENSMUSP00000134388" "ENSMUSP00000055427" "ENSMUSP00000107247" "ENSMUSP00000117616" "ENSMUSP00000075250" "ENSMUSP00000107214" "ENSMUSP00000088287"
+#>  [71] "ENSMUSP00000056604" "ENSMUSP00000020252" "ENSMUSP00000124719" "ENSMUSP00000034973" "ENSMUSP00000020991" "ENSMUSP00000002663" "ENSMUSP00000025249"
+#>  [78] "ENSMUSP00000001279" "ENSMUSP00000140676" "ENSMUSP00000062096" "ENSMUSP00000029674" "ENSMUSP00000030714" "ENSMUSP00000022592" "ENSMUSP00000023559"
+#>  [85] "ENSMUSP00000079670" "ENSMUSP00000033761" "ENSMUSP00000067325" "ENSMUSP00000044624" "ENSMUSP00000058629" "ENSMUSP00000088453" "ENSMUSP00000007005"
+#>  [92] "ENSMUSP00000088249" "ENSMUSP00000068123" "ENSMUSP00000089298" "ENSMUSP00000110118" "ENSMUSP00000073695" "ENSMUSP00000083908" "ENSMUSP00000092492"
+#>  [99] "ENSMUSP00000034243" "ENSMUSP00000115044" "ENSMUSP00000019117" "ENSMUSP00000034689" "ENSMUSP00000034811" "ENSMUSP00000102636" "ENSMUSP00000097150"
+#> [106] "ENSMUSP00000000924" "ENSMUSP00000027989" "ENSMUSP00000038063" "ENSMUSP00000036971" "ENSMUSP00000132780" "ENSMUSP00000033715" "ENSMUSP00000073541"
+#> [113] "ENSMUSP00000046856" "ENSMUSP00000080531"
+```
+
+# Extensions
+
+## Heterogeneous Networks
+
+A network is heterogeneous if it contains more than one node type. This allows for the joint analysis of different omics data types, by creating a heterogeneous network of the features from the different omics experiments (e.g., proteins and metabolites) and then mapping the experimental values from the omics experiments to their respective nodes. RWR has been generalized to heterogeneous networks ([Li et al.](https://doi.org/10.1093/bioinformatics/btq108)). Since AMEND implements RWR, the algorithm can accommodate these heterogeneous networks. Currently, AMEND can only take a network of at most two node types. If the user has a heterogeneous network with omics data that they would like to analyze with AMEND, they must specify `heterogeneous = TRUE`, along with the following arguments: `node_type`, `jump`, and `net1.weight`.
+
+RWR has also been generalized to multiplex networks (multiple edge types) and to multiplex-heterogeneous networks ([Valdeolivas et al.](https://doi.org/10.1093/bioinformatics/bty637)). AMEND cannot yet accommodate multiplex or multiplex-heterogeneous networks, but it is fairly straight-forward to modify the algorithm such that this would be possible.
+
+## Mitigating Degree Bias
+
+PPI networks have largely been recognized to suffer from a node degree bias arising from technical and study biases associated with PPI experiments. Many experimental approaches for ascertaining PPIs use a bait and prey paradigm. The degree of a protein in a PPI network (the number of proteins that protein has been shown to interact with) is highly dependent on the number of times it has been used as bait in PPI experiments. The degree also depends on the general research interest that exists for a protein; some proteins are implicated in disease areas that benefit from more active research as compared to others. This causes the degrees of some proteins to be inflated compared to others, which manifests itself in higher propagation scores for those proteins with inflated degree. 
+
+Most active module identification methods do not address degree bias, although several approaches have been developed to deal with the issue. Many are permutation-based involving permuations of the data or random networks. Others adjust propagation scores according to node centrality. Still others attempt to address degree bias in the creation of the transition matrix prior to any network propagation method. Notably, the developers of NetCore [Barel et al.](https://doi.org/10.1093/nar/gkaa639) use node coreness (rather than degree) to create the transition matrix and thus claim to address degree bias, where coreness is a global measure of node connectivity (whereas degree is a local measure). However, upon reflection, this claim is untrue. In the core-normalized transition matrix $M=(m_{ij})$, the probability of moving from node $j$ to node $i$ ($Pr(j\rightarrow i)$) is $m_{ij}=\frac{k_i}{\sum_{l\in S_j}k_l}$, where $k_i$ is the coreness of node $i$ and $S_j$ is the set of neighbors of node $j$. Therefore, the probability of moving to node $i$ depends on its coreness, which is a measure of its connectivity and is highly correlated with its degree. In the context of RWR, a random walker may be _more_ likely to move to a node that is subject to degree bias (i.e., has an inflated degree, and by correlation, an inflated coreness), resulting in a larger propagation score and an exacerbation of the degree bias issue. Therefore, I recommend using `normalize = degree` to create the transition matrix, where $Pr(j\rightarrow i)$ does _not_ depend on the degree of node $i$. 
+
+A procedure currently in development wih the goal of mitigating degree bias is called _inflation-normalization_. This procedure is applied directly to the transition matrix and works by globally attenuating the influence that degree has on propagation scores. Assuming a left stochastic transition matrix, inflation-normalization applies the inflation operator introduced in the Markov Clustering algorithm to the rows of the transition matrix, followed by column normalization. As this is still in development, users are encouraged to use it with caution. More details will be forthcoming as the procedure matures. 
+
+
 
 

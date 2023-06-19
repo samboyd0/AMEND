@@ -90,7 +90,7 @@ datFC <- datFC %>% dplyr::select(-Gene)
 #=========================#
 # Getting mapping between Mouse Gene Symbols <--> Ensembl Peptide IDs
 gene_symbols <- row.names(dat)
-ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://feb2023.archive.ensembl.org")
 mapping <- biomaRt::getBM(attributes=c("mgi_symbol", "ensembl_peptide_id"),
                           filters = "mgi_symbol",
                           values = gene_symbols,
@@ -149,9 +149,10 @@ glut4_graph = igraph::induced_subgraph(glut4_graph, glut4_clusters$membership ==
 # Getting adjacency matrix from graph
 glut4_adjM = igraph::as_adjacency_matrix(glut4_graph, attr = "weight", sparse = T)
 
-# Creating vector of gene-wise experimental scores
+# Creating named vectors of gene-wise experimental scores
 eci_scores = igraph::V(glut4_graph)$ECI
 logFC_KO = igraph::V(glut4_graph)$logFC
+names(eci_scores) = names(logFC_KO) = igraph::V(glut4_graph)$name
 
 # write to package
 usethis::use_data(glut4_graph, glut4_adjM, eci_scores, logFC_KO, overwrite = TRUE)

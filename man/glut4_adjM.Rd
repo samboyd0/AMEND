@@ -5,7 +5,7 @@
 \alias{glut4_adjM}
 \title{Mus musculus PPI network adjacency matrix}
 \format{
-An object of class \code{dgCMatrix} with 916 rows and 916 columns.
+An object of class \code{dgCMatrix} with 1033 rows and 1033 columns.
 }
 \source{
 \url{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE35378}, \url{https://version-11-0b.string-db.org/cgi/download?sessionId=\%24input-\%3E\%7BsessionId\%7D&species_text=Mus+musculus}

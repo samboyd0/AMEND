@@ -6,34 +6,39 @@
 \usage{
 data_preprocessing(
   graph,
-  data.type = c("ECI", "logFC", "p_val"),
-  eci.direction = c("positive", "negative"),
-  logFC.direction = c("positive", "negative", "both"),
-  seed.weight = 0.5
+  data.type = c("ECI", "logFC", "p_val", "binary", "other"),
+  DOI = c("positive", "negative", "both"),
+  seed.weight = 0.5,
+  seed.scheme = c("zero_bottom", "zero_middle"),
+  heterogeneous = FALSE
 )
 }
 \arguments{
-\item{graph}{(igraph object): input graph}
+\item{graph}{Input graph}
 
-\item{data.type}{(character): one of ECI, logFC, or p_val. If graph is specified, must have matching vertex attribute}
+\item{data.type}{One of ECI, logFC, p_val, or binary. If graph is specified, must have matching vertex attribute}
 
-\item{eci.direction}{(character): direction of interest for ECI values. negative or positive}
+\item{DOI}{Direction of Interest for experimental values. One of negative, positive, or both. When "both" is specified, the absolute value is taken. Only relevant for data type ECI and logFC}
 
-\item{logFC.direction}{(character): direction of interest for log fold change values. negative, positive, or both. When "both" is specified, the absolute value of logFC is taken}
+\item{seed.weight}{Relative weight to give to nodes not in the DOI in random walk with restart, between 0 and 1}
 
-\item{seed.weight}{(numeric): Relative weight to give to nodes not in the direction of interest in random walk with restart, between 0 and 1}
+\item{seed.scheme}{Determines how the feature-wise experimental values are transformed for use as seed values in RWR. See Details.}
+
+\item{heterogeneous}{Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute}
 }
 \value{
-igraph object with 'seeds' and 'Z' vertex attributes
+igraph object with added 'seeds' and 'Z' vertex attributes
 }
 \description{
-Pre-processing of experimental data for input into AMEND and RWR. For use inside \code{amend()} and \code{run_AMEND()}.
+Pre-processing of experimental data for input into AMEND and RWR. For use inside \code{run_AMEND()}
 }
 \details{
 Transforms experimental data for use with Random walk with restart (RWR), which requires non-negative seed values with at least one non-zero element. For subnetwork scoring, the experimental scores need to be standardized w.r.t. all nodes in the input network.
-For data.type "ECI", the seeding scheme involves taking the absolute value of the ECIs then weighting those nodes NOT in the direction of interest by 'seed.weight'
-For data.type "logFC", the log fold changes are multiplied by -1 if the direction of interest is negative, 1 if the direction of interest is positive, and the absolute value is taken if the direction of interest is both. Then the values are exponentiated
+For data.type "ECI", the seeding scheme involves taking the absolute value of the ECIs then weighting those nodes NOT in the Direction of Interest (DOI) by 'seed.weight'
+For data.type "logFC", the log fold changes are multiplied by -1 if the DOI is negative, 1 if the DOI is positive, and the absolute value is taken if the DOI is both. Then the values are exponentiated
 For data.type "p_val", the p-values are transformed by -log10(p-value)
+For data.type "binary", weight is assigned uniformly to "active" nodes, i.e., nodes with a value of 1 in the binary vector.
+For data.type "other", no transformation is performed.
 }
 \examples{
 # Attach igraph package
@@ -46,9 +51,9 @@ plot(density(V(glut4_graph)$ECI))
 
 # Transform experimental values (ECI) for multiple values of 'seed.weight'
 new_graph1 = AMEND:::data_preprocessing(graph = glut4_graph, data.type = "ECI",
-                                        eci.direction = "negative", seed.weight = 0.5)
+                                        DOI = "negative", seed.weight = 0.5)
 new_graph2 = AMEND:::data_preprocessing(graph = glut4_graph, data.type = "ECI",
-                                        eci.direction = "negative", seed.weight = 0.2)
+                                        DOI = "negative", seed.weight = 0.2)
 
 # Comparing
 plot(density(V(new_graph1)$seeds))

@@ -2,53 +2,62 @@
 % Please edit documentation in R/main.R
 \name{run_AMEND}
 \alias{run_AMEND}
-\title{Pipeline for AMEND workflow}
+\title{Identify active modules from an interaction network}
 \usage{
 run_AMEND(
-  graph,
-  n = 25,
-  eta = NULL,
-  data.type = c("ECI", "logFC", "p_val"),
-  eci.direction = c("positive", "negative"),
-  logFC.direction = c("positive", "negative", "both"),
+  graph = NULL,
   adj_matrix = NULL,
   node_scores = NULL,
-  normalize = c("core", "degree"),
+  node_type = NULL,
+  n = 25,
+  data.type = c("ECI", "logFC", "p_val", "binary", "other"),
+  DOI = c("positive", "negative", "both"),
+  heterogeneous = FALSE,
+  normalize = c("degree", "core"),
+  eta = NULL,
   seed.weight = 0.5,
-  max_it = 3,
-  n_particles = 3,
-  random_seed = NULL,
-  verbose = F
+  seed.scheme = c("zero_bottom", "zero_middle"),
+  jump = 0.5,
+  net1.weight = 0.5,
+  verbose = TRUE,
+  degree.bias = FALSE,
+  identifier = 1
 )
 }
 \arguments{
-\item{graph}{an igraph object with experimental data as vertex attribute. Either graph or adj_matrix and node_scores must be specified}
+\item{graph}{igraph object with experimental data as vertex attribute. Either graph or adj_matrix and node_scores must be specified}
 
-\item{n}{(integer): approximate size of the final module. Used for setting the filtering rate schedule}
+\item{adj_matrix}{Adjacency matrix of network. Either graph or adj_matrix and node_scores must be specified. Must have either colnames or rownames}
 
-\item{eta}{(numeric): starting filtering rate. If NULL (default), determines optimal value through PSO}
+\item{node_scores}{Named vector of node scores}
 
-\item{data.type}{(character): one of ECI, logFC, or p_val. If graph is specified, must have matching vertex attribute}
+\item{node_type}{Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.}
 
-\item{eci.direction}{(character): direction of interest for ECI values. negative or positive}
+\item{n}{Approximate size of the final module}
 
-\item{logFC.direction}{(character): direction of interest for log fold change values. negative, positive, or both. When "both" is specified, the absolute value of logFC is taken}
+\item{data.type}{Type of input data. If graph is specified, must have matching vertex attribute}
 
-\item{adj_matrix}{(matrix): adjacency matrix of network. Either graph or adj_matrix and node_scores must be specified}
+\item{DOI}{Direction of Interest for experimental values. One of negative, positive, or both. When "both" is specified, the absolute value is taken. Only relevant for data type ECI and logFC}
 
-\item{node_scores}{vector of node scores}
+\item{heterogeneous}{Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute}
 
-\item{normalize}{(character): normalization scheme of adjacency matrix for random walk with restart}
+\item{normalize}{Normalization scheme of adjacency matrix for random walk with restart}
 
-\item{seed.weight}{(numeric): Relative weight to give to nodes not in the direction of interest in random walk with restart, between 0 and 1}
+\item{eta}{Starting filtering rate. If NULL (default), a value is chosen based on the input network size and parameter 'n'}
 
-\item{max_it}{(integer): maximum number of iterations for PSO}
+\item{seed.weight}{Relative weight to give to nodes not in the DOI in random walk with restart, between 0 and 1}
 
-\item{n_particles}{(integer): number of particles for PSO}
+\item{seed.scheme}{Determines how the feature-wise experimental values are transformed for use as seed values in RWR. See Details.}
 
-\item{random_seed}{(integer): random seed. If NULL (default), no seed is set by the user}
+\item{jump}{Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE)}
 
-\item{verbose}{(logical): Whether to output current iteration number to show progress}
+\item{net1.weight}{Relative weight to give to nodes of network 1 (the first type to appear in node_type).}
+
+\item{verbose}{Logical. Whether to output current iteration number to show progress}
+
+\item{degree.bias}{Logical. Whether to mitigate degree bias through inflation-normalization of transition matrix prior to RWR. Experimental. See Details}
+
+\item{identifier}{For use when performing many runs of AMEND to keep track of progress}
 }
 \value{
 a named list with the following elements:
@@ -62,20 +71,20 @@ a named list with the following elements:
 }
 }
 \description{
-\code{run_AMEND()} performs all steps of the AMEND workflow, including setting the starting filtering rate through PSO and identifying an 'active' module.
+Identifies an active module, i.e., subnetwork with large experimental values, thorugh an iterative optimization procedure.
 }
 \details{
-AMEND is an active module identification method. An active module is a subset of connected nodes in an interaction network that have relatively large experimental values.
-AMEND takes as input a protein-protein interaction (PPI) network and node-wise summaries of experimental data (e.g., log fold change from a RNA-seq differential expression analysis). It returns a single connected subnetwork (i.e., module).
+Given an interaction network and experimental scores, AMEND attempts to find an active module by iteratively applying random walk with restart (RWR) and a heurstic solution to a maximum-weight connected subgraph problem.
 
-The final module is found in an iterative manner by applying random walk with restart (RWR) on the network to get node weights, which are then shifted by a certain quantile of the RWR weights (termed the filtering rate) so that there are both negative and positive values.
-These shifted RWR weights are used to find the maximum-weight connected subgraph. This new subgraph is input into RWR again and the process repeats until there is no change between iterations. The subnetwork with largest score is returned as the final module.
+Briefly, RWR is applied to the network to get propagation scores which are shifted by some percentile (filtering rate, which decreases exponentially each iteration). The network with propagation scores are input into \code{heinz()}, an algorithm that heuristically finds a subnetwork with maximum node weight. This subnetwork is assigned a score based on its mean experimental values and mean core-clustering coefficients and then input into the next iteration. The algorithm stops when there is no change between iterations, and the subnetwork with maximum score is returned.
 
-The filtering rate changes at each iteration following an exponential decay schedule, with the starting filtering rate determined by particle swarm optimization (PSO).
+This function can also accommodate heterogeneous networks with two node types. This information is incorporated in RWR for heterogeneous graphs (RWRH) proposed by \href{https://doi.org/10.1093/bioinformatics/btq108}{Li et al.}. This introduces the 'jump' and 'net1.weight' parameters.
 
-The network score is the product of the average standardized experimental values and the average core-clustering coefficient of the nodes in the network. The experimental values (e.g., log fold changes) are standardized w.r.t. the entire dataset.
+Since RWR requires seed values between 0 and 1, node scores often need to be transformed. 'seed.scheme' is used when data.type=ECI. 'zero_bottom' gives ECI values of zero the lowest weight, regardless of DOI. 'zero_middle' linearly transforms ECI values s.t. values in DOI are largest, values \emph{not} in DOI are smallest, and ECIs of zero are in the middle.
 
-See \url{/link/to/paper}.
+The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by applying a row-inflation then column-normalization operation on the transition matrix (assumed to be a left stochastic matrix).
+
+See \url{link/to/paper} for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
 }
 \examples{
 # Attach igraph library
@@ -87,13 +96,13 @@ glut4_graph
 head(V(glut4_graph)$ECI)
 
 \dontrun{
-# Use run_AMEND() with an igraph object
-subnet1 = run_AMEND(graph = glut4_graph, data.type = "ECI", eci.direction = "negative",
-                    max_it = 1, n_particles = 1, verbose = TRUE)
+# Use run_AMEND() with an igraph object with a vertex attribute matching data.type arg
+subnet1 = run_AMEND(graph = glut4_graph, data.type = "ECI",
+                DOI = "negative")
 
 # Use run_AMEND() with an adjacency matrix and a vector of node scores
-subnet2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, data.type = "ECI",
-                    eci.direction = "negative", max_it = 1, n_particles = 1, verbose = TRUE)
+subnet2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores,
+                data.type = "ECI", DOI = "negative")
 }
 
 }
