@@ -1,0 +1,361 @@
+---
+title: "AMEND Tutorial"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{AMEND Tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<!---
+Run this code to locally knit the vignette.
+knitr::knit("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/markdown_files/amend_vignette_local.Rmd.orig", 
+            output = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/amend_vignette.Rmd")
+
+Resource:
+https://ropensci.org/blog/2019/12/08/precompute-vignettes/
+--->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  include = TRUE
+)
+```
+
+```{r setup, include = FALSE}
+# library(AMEND)
+source("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/R/main.R")
+library(GEOquery)
+library(limma)
+library(ECEA)
+library(oligo)
+library(dplyr)
+library(mgu74av2.db)
+library(biomaRt)
+library(igraph)
+library(data.table)
+```
+
+# Introduction
+
+A powerful approach for the analysis of omics data is to integrate them with molecular interaction networks. Specifically, the integration of microarray/RNA-seq data with protein-protein interaction (PPI) networks has emerged as an effective way to elucidate important genes involved in a biological process. These approaches are often called active module identification (AMI) methods and have the goal of finding a subset of genes (either connected or disconnected) in the PPI network that are relevant to the biological conditions of the experiment.
+
+AMEND is an AMI method that takes as input a PPI network and gene-wise experimental scores (e.g., log fold change) and returns a connected module. AMEND relies on random walk with restart (RWR) and a heuristic solution to the maximum-weight connected subgraph (MWCS) problem to iteratively filter out genes until an optimal subnetwork is found. At each iteration, the current network is input into RWR, with the gene-wise experimental scores serving as seed values. This produces node weights, which are shifted downwards by a certain quantile (called the filtering rate), resulting in both positive and negative node weights. These weights are used to find a maximum-weight connected subgraph. AMEND uses a heuristic solution first implemented in the [BioNet](https://bioconductor.org/packages/release/bioc/html/BioNet.html) package. This produces a subnetwork, which is the input for the next iteration. Each subnetwork is scored by the product of the mean standardized experimental scores (standardized w.r.t. all genes in original network) and the mean core-clustering coefficient (a measure of node connectivity). The process stops when there is no change in subnetwork between iterations or when only 2 nodes remain in the subnetwork. The subnetwork with the largest score is returned. 
+
+A key concept in AMEND is the filtering rate, which determines how the untreated RWR scores are shifted before input into the heuristic MWCS solution. The filtering rate is actually a quantile of the untreated RWR scores. As the quantile decreases, each RWR score is subtracted by a smaller number, resulting in fewer negatively weighted nodes, which results in fewer genes filtered out by the MWCS solution. In this sense, the quantile used to shift the untreated RWR scores is a filtering rate. This filtering rate follows an exponential decay schedule, which has two hyperparameters: the starting filtering rate and the decay value. 
+
+The decay parameter determines the rate at which the shifting quantile decreases. This value is determined by simulation. The decay is set to the maximum value that will allow the algorithm to arrive at a subnetwork of size $n$. If the decay is too large, the filtering rate will approach zero too quickly. This causes the algorithm to stop early since no nodes will be removed with a filtering rate of zero. The parameter $n$ is set by the user and approximates the size of the final module. 
+
+The primary function is `run_AMEND()`, which implements the AMEND algorithm and returns a connected subnetwork. 
+
+# Installation
+
+AMEND is hosted on [GitHub](https://github.com/samboyd0/AMEND) and can be installed by running the following code.
+
+```{r install, eval = FALSE, include = TRUE}
+devtools::install_github("samboyd0/AMEND", build_vignettes = TRUE)
+```
+
+# Example
+
+This example will focus on a gene expression microarray experiment to illustrate a typical use case for AMEND. 
+
+## GLUT4 Data Description
+
+The dataset that will be used here is a GLUT4 knockout-overexpression (KO-OX) microarray experiment in mouse adipose tissue and is available on the NCBI's Gene Expression Omnibus under accession [GSE35378](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE35378). GLUT4 is a glucose transporter protein involved in the uptake of glucose into the cell. The experiment involved 4 groups of 3 mice each: GLUT4 KO, KO control, GLUT4 OX, and OX control.  
+
+```{r getGEO}
+# Accessing data from NCBI GEO 
+gse1 <- GEOquery::getGEO("GSE35378", GSEMatrix = TRUE)
+data <- Biobase::exprs(gse1[[1]])
+head(data)
+```
+
+## Equivalent Change Index
+
+AMEND was developed to accommodate a recently introduced metric, the equivalent change index (ECI). The ECI measures the extent to which a gene is equivalently or inversely expressed between two treatment-control comparisons. It ranges between -1 and 1, with a value of -1 indicating changes in expression in exactly opposing ways (e.g., expression was halved between groups for one experiment but doubled for the other), and a value of 1 indicating changes in expression in exactly equivalent ways (e.g., expression was doubled between groups for both experiments). Formally, the ECI for gene $i$ is $$\lambda_i=sign(\beta_{i1}*\beta_{i2})\frac{min(|\beta_{i1}|,|\beta_{i2}|)}{max(|\beta_{i1}|,|\beta_{i2}|)}(1-max(p_{i1}, p_{i2}))$$ where $\beta_{ij}$ represents the log fold change and $p_{ij}$ the p-value for gene $i$ from experiment $j$. 
+
+## Differential Expression Analysis 
+
+This section will show the steps taken to generate the log fold changes and ECIs for the GLUT4 dataset. Preprocessing involves background subtracting and normalizing, as well as checking for zero sample variances. 
+
+```{r preprocessing}
+# Background-subtracting and normalizing with oligo package
+re <- oligo::basicRMA(data, row.names(data))
+
+# checking for genes with zero sample variance
+r <- matrix()
+for(i in 1:nrow(re)){
+  t <- sd(re[i,])
+  if(t == 0){
+    r <- c(r, i)
+  }
+}
+var_check <- r[-1]
+```
+
+Next, the _limma_ package is used to fit linear models to the expression data. $log_2$ fold changes are obtained for the appropriate group comparisons, along with their unadjusted p-values. 
+
+```{r DE}
+# Design matrix
+groups = c(rep("OX", 3), rep("OX_ctrl", 3), rep("KO", 3), rep("KO_ctrl", 3))
+X = stats::model.matrix(~0+groups)
+colnames(X) = sort(unique(groups))
+
+# Fitting linear models
+fit <- limma::lmFit(re[-var_check,], design = X)
+
+# Getting contrast coefficents for KO vs. Ctrl 1
+cnt_KO = limma::makeContrasts(contrasts = "KO-KO_ctrl", levels = colnames(X))
+fit_KO = limma::contrasts.fit(fit, contrasts = cnt_KO)
+fit_KO <- limma::eBayes(fit_KO)
+tt_KO <- limma::topTable(fit_KO, number = 100000, adjust.method = "BH")
+esize_KO <- tt_KO$logFC
+pval_KO <- tt_KO$P.Value
+names(esize_KO) <- row.names(tt_KO)
+names(pval_KO) <- row.names(tt_KO)
+head(esize_KO)
+
+# Getting contrast coefficents for OX vs. Ctrl 2
+cnt_OX = limma::makeContrasts(contrasts = "OX-OX_ctrl", levels = colnames(X))
+fit_OX = limma::contrasts.fit(fit, contrasts = cnt_OX)
+fit_OX <- limma::eBayes(fit_OX)
+tt_OX <- limma::topTable(fit_OX, number = 100000, adjust.method = "BH")
+esize_OX <- tt_OX$logFC
+pval_OX <- tt_OX$P.Value
+names(esize_OX) <- row.names(tt_OX)
+names(pval_OX) <- row.names(tt_OX)
+head(esize_OX)
+```
+
+We are now able to calculate the ECIs for each probe in the microarray experiment using the R package _ECEA_, which can be installed from [GitHub](https://github.com/jeffreyat/ECEA) with the following code: `devtools::install_github("jeffreyat/ECEA")`. 
+
+```{r ECI, eval = requireNamespace("ECEA")}
+# Getting ECI values for each gene
+eci <- ECEA::getECI(smd1 = esize_OX, smd2 = esize_KO, p1 = pval_OX, p2 = pval_KO)
+eci <- data.frame(ECI = eci, row.names = names(eci))
+```
+
+The probe IDs are now mapped to gene symbols. Along with the ECI, we will also extract the $log_2$ fold changes for the GLUT4 KO vs. Control groups for downstream analysis.
+
+```{r mapping}
+# Mapping probe identifier to gene symbol & aggregating ECI values and logFC values for KO vs. Ctrl
+datFC = data.frame(logFC = tt_KO$logFC * (1 - tt_KO$P.Value), row.names = row.names(tt_KO))
+dat <- eci
+sym_map <- mgu74av2.db::mgu74av2SYMBOL
+
+# Map the probes
+genes <- unlist(as.list(sym_map[rownames(dat)]))
+
+# Remove probes that didn't map
+genes <- na.omit(genes)
+common <- intersect(names(genes), rownames(dat))
+genes <- genes[common]
+dat <- dat[common,]
+datFC = datFC[common,]
+
+# Aggregate probes... take median ECI if multiple probes map to same gene
+dat <- aggregate(dat, by = list(genes), FUN = median)
+names(dat) <- c("Gene", "ECI")
+row.names(dat) <- dat$Gene
+dat <- dat %>% dplyr::select(-Gene)
+
+# Aggregate probes... take median logFC if multiple probes map to same gene
+datFC <- aggregate(datFC, by = list(genes), FUN = median)
+names(datFC) <- c("Gene", "logFC")
+row.names(datFC) <- datFC$Gene
+datFC <- datFC %>% dplyr::select(-Gene)
+```
+
+
+## Protein-Protein Interaction Network
+
+For this example, a _mus musculus_ PPI network is downloaded from STRING (v11.0). Edges appear twice in the downloaded file, necessitating a helper function to remove the duplicate edges. Only interactions with a confidence score $\ge$ 0.8 are kept.
+
+```{r PPI, eval = file.exists("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt")}
+# Getting mapping between Mouse Gene Symbols <--> Ensembl Peptide IDs
+gene_symbols <- row.names(dat)
+# ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://feb2023.archive.ensembl.org")
+mapping <- biomaRt::getBM(attributes=c("mgi_symbol", "ensembl_peptide_id"),
+                          filters = "mgi_symbol",
+                          values = gene_symbols,
+                          mart = ensembl)
+mapping <- mapping %>% dplyr::filter(ensembl_peptide_id != "")
+
+# Function for removing the duplicate edges from String PPI network 
+remove_duplicate_edges = function(x){
+  g = igraph::graph_from_edgelist(as.matrix(x[,1:2]), directed = F)
+  igraph::E(g)$weight = x[,3] / 1000
+  adjM = as.matrix(igraph::as_adjacency_matrix(g, attr = "weight", sparse = T)) / 2
+  g = igraph::graph_from_adjacency_matrix(adjM, mode = "undirected", weighted = TRUE)
+  el = igraph::as_edgelist(g)
+  return(cbind(el, igraph::E(g)$weight))
+}
+
+# Loading in mus musculus PPIN from String v11.0... 
+# Can be downloaded from STRING website, but make sure you're on the right version
+file_path = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt"
+ppi = data.table::fread(file = file_path,
+                        header = TRUE, sep = " ") %>%
+  dplyr::filter(combined_score >= 800) %>%
+  dplyr::mutate(protein1 = do.call(c, lapply(strsplit(protein1, "\\."), function(x) x[2])),
+         protein2 = do.call(c, lapply(strsplit(protein2, "\\."), function(x) x[2])))  %>%
+  as.data.frame() %>%
+  remove_duplicate_edges()
+head(ppi)
+```
+
+Not all genes will map to a protein in the PPI network. Conversely, some proteins won't correspond to a gene in the experiment. Only genes and proteins that have a mapping will be kept, thus ensuring that each node in the network has an experimental score (e.g., ECI or log fold change).
+
+```{r ppi_mapping}
+# Keeping only genes that map to a protein in PPIN
+mapping = mapping %>%
+  dplyr::mutate(ppi = ensembl_peptide_id %in% ppi[,1] | ensembl_peptide_id %in% ppi[,2]) %>%
+  dplyr::filter(ppi) %>%
+  dplyr::group_by(mgi_symbol) %>%
+  dplyr::filter(row_number() == 1) %>%
+  as.data.frame()
+
+# Keeping only proteins that map to a gene in the experiment
+ppi = ppi[ppi[,1] %in% mapping$ensembl_peptide_id & ppi[,2] %in% mapping$ensembl_peptide_id,]
+```
+
+The input network for AMEND is required to be connected, so we will take the largest connected component. The ECIs and $log_2$ fold changes are then set as vertex attributes. 
+
+```{r getGraph}
+# Getting largest connected component of PPIN as an igraph object
+glut4_graph = igraph::graph_from_edgelist(as.matrix(ppi[,1:2]), directed = FALSE)
+igraph::E(glut4_graph)$weight = as.numeric(ppi[,3])
+igraph::V(glut4_graph)$symbol = mapping$mgi_symbol[match(igraph::V(glut4_graph)$name, mapping$ensembl_peptide_id)]
+if(!igraph::is_connected(glut4_graph)){
+  l = igraph::decompose(glut4_graph)
+  glut4_graph = l[[which.max(do.call(c, lapply(l, igraph::vcount)))]]
+}
+
+# Setting vertex attribute ECI and logFC (logFC for KO vs. Ctrl)
+igraph::V(glut4_graph)$ECI = dat$ECI[match(igraph::V(glut4_graph)$symbol, row.names(dat))]
+igraph::V(glut4_graph)$logFC = datFC$logFC[match(igraph::V(glut4_graph)$symbol, row.names(datFC))]
+glut4_graph
+```
+
+`run_AMEND()` can also work with an adjacency matrix and a vector of node scores, instead of a graph.
+
+```{r getOtherData}
+# Getting adjacency matrix from graph
+glut4_adjM = igraph::as_adjacency_matrix(glut4_graph, attr = "weight", sparse = T)
+glut4_adjM[1:6,1:6]
+
+# Creating named vectors of gene-wise experimental scores
+eci_scores = igraph::V(glut4_graph)$ECI
+logFC_KO = igraph::V(glut4_graph)$logFC
+names(eci_scores) = names(logFC_KO) = igraph::V(glut4_graph)$name
+head(eci_scores)
+head(logFC_KO)
+```
+
+## Running AMEND with ECI
+
+Now that we have analyzed our microarray data and obtained a PPI network, we can continue with the active module identification step. It is important to clarify the biological question of interset that we want to answer. For the GLUT4 KO-OX experiment, it may be of interest to know which genes are affected in opposing ways by the two treatments. A gene that is up-regulated in the KO-control arm and down-regulated in the OX-control arm suggests a close association of that gene with GLUT4.
+The ECI is well suited to answer this type of question. Since we are interested in inversely regulated genes, we will want to set `data.type = "ECI"` and `DOI = "negative"`. We will set `n = 25` to specify the approximate size of the final module.
+
+The `normalize` argument specifies how to normalize the adjacency matrix for random walk with restart (RWR). `normalize = "core"` will use node coreness to normalize the adjacecy matrix, whereas `normalize = "degree"` will column normalize the adjacency matrix using node degree. The seed.weight argument specifies how to transform the ECI values for use as seed values in RWR. Seed values must be non-negative, but ECI has a range of $[-1,1]$, necessitating some transformation. The scheme used in AMEND is to take the absolute value of the ECIs, then weight the values _not_ in the direction of interest by some constant in $[0,1]$. For example, when interested in negative ECIs, $seed.weight = 0.5$ translates into weighting a positive ECI gene half that of a negative ECI gene of equal magnitude. 
+
+```{r runECI}
+# Using the igraph object as input
+module = run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", DOI = "negative", 
+                   normalize = "degree", seed.weight = 0.5)
+# module = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", DOI = "negative", 
+#                    normalize = "core", seed.weight = 0.5)
+
+# Can also use the adjacency matrix and vector of node scores
+if(0){
+  module = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
+                     DOI = "negative", normalize = "degree", seed.weight = 0.5)
+  # module = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
+  #                    eci.direction = "negative", normalize = "core", seed.weight = 0.5)
+}
+```
+
+Let's inspect the module returned by `run_AMEND()`. A named list is returned containing the final module, module score, a list of node names contained in the intermediate subnetworks, network statistics for all iterations, the runtime, and a list of the input parameters. 
+
+```{r inspectECI}
+# The final module
+module$module
+
+# data.frame of network stats for all iterations
+module$stats
+
+# Runtime
+module$time
+```
+
+## Running AMEND with log fold change 
+
+AMEND can also accommodate log fold changes. We have log fold changes for the GLUT4 KO vs. control DE analysis. Suppose we are interested in genes with large log fold changes, regardless of direction. Then we would set `data.type = "logFC"` and `DOI = "both"`.
+
+```{r runLogFC}
+# Using the igraph object as input
+module2 = run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", DOI = "both", 
+                   normalize = "degree", seed.weight = 0.5)
+# module2 = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", logFC.direction = "both", 
+#                    normalize = "core", seed.weight = 0.5)
+
+# Can also use the adjacency matrix and vector of node scores
+if(0){
+  module2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
+                      DOI = "both", normalize = "degree", seed.weight = 0.5)
+  # module2 = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
+  #                     logFC.direction = "both", normalize = "core", seed.weight = 0.5)
+}
+```
+
+Here are the results. 
+
+```{r inspectLogFC}
+# The final module
+module2$module
+
+# data.frame of network stats for all iterations
+module2$stats
+
+# Runtime
+module2$time
+```
+
+Suppose that we want to investigate an intermediate subnetwork that was generated during `run_AMEND()`, either because the final module was too small or because we want to see which genes were filtered out. From the output of `module2$stats`, let's choose the subnetwork from iteration 6. We can retrieve this subnetwork by using the function `get_subnetwork()`. We can also look at the nodes in this subnetwork directly from the `module2` object.
+
+```{r get_subnet_Ex}
+# Using get_subnetwork()
+subnet6 = get_subnetwork(amend_object = module2, k = 6)
+subnet6
+
+# Directly from module2
+module2$subnetworks[[6]]
+```
+
+# Extensions
+
+## Heterogeneous Networks
+
+A network is heterogeneous if it contains more than one node type. This allows for the joint analysis of different omics data types, by creating a heterogeneous network of the features from the different omics experiments (e.g., proteins and metabolites) and then mapping the experimental values from the omics experiments to their respective nodes. RWR has been generalized to heterogeneous networks ([Li et al.](https://doi.org/10.1093/bioinformatics/btq108)). Since AMEND implements RWR, the algorithm can accommodate these heterogeneous networks. Currently, AMEND can only take a network of at most two node types. If the user has a heterogeneous network with omics data that they would like to analyze with AMEND, they must specify `heterogeneous = TRUE`, along with the following arguments: `node_type`, `jump`, and `net1.weight`.
+
+RWR has also been generalized to multiplex networks (multiple edge types) and to multiplex-heterogeneous networks ([Valdeolivas et al.](https://doi.org/10.1093/bioinformatics/bty637)). AMEND cannot yet accommodate multiplex or multiplex-heterogeneous networks, but it is fairly straight-forward to modify the algorithm such that this would be possible.
+
+## Mitigating Degree Bias
+
+PPI networks have largely been recognized to suffer from a node degree bias arising from technical and study biases associated with PPI experiments. Many experimental approaches for ascertaining PPIs use a bait and prey paradigm. The degree of a protein in a PPI network (the number of proteins that protein has been shown to interact with) is highly dependent on the number of times it has been used as bait in PPI experiments. The degree also depends on the general research interest that exists for a protein; some proteins are implicated in disease areas that benefit from more active research as compared to others. This causes the degrees of some proteins to be inflated compared to others, which manifests itself in higher propagation scores for those proteins with inflated degree. 
+
+Most active module identification methods do not address degree bias, although several approaches have been developed to deal with the issue. Many are permutation-based involving permuations of the data or random networks. Others adjust propagation scores according to node centrality. Still others attempt to address degree bias in the creation of the transition matrix prior to any network propagation method. Notably, the developers of NetCore [Barel et al.](https://doi.org/10.1093/nar/gkaa639) use node coreness (rather than degree) to create the transition matrix and thus claim to address degree bias, where coreness is a global measure of node connectivity (whereas degree is a local measure). However, upon reflection, this claim is untrue. In the core-normalized transition matrix $M=(m_{ij})$, the probability of moving from node $j$ to node $i$ ($Pr(j\rightarrow i)$) is $m_{ij}=\frac{k_i}{\sum_{l\in S_j}k_l}$, where $k_i$ is the coreness of node $i$ and $S_j$ is the set of neighbors of node $j$. Therefore, the probability of moving to node $i$ depends on its coreness, which is a measure of its connectivity and is highly correlated with its degree. In the context of RWR, a random walker may be _more_ likely to move to a node that is subject to degree bias (i.e., has an inflated degree, and by correlation, an inflated coreness), resulting in a larger propagation score and an exacerbation of the degree bias issue. Therefore, I recommend using `normalize = degree` to create the transition matrix, where $Pr(j\rightarrow i)$ does _not_ depend on the degree of node $i$. 
+
+A procedure currently in development wih the goal of mitigating degree bias is called _inflation-normalization_. This procedure is applied directly to the transition matrix and works by globally attenuating the influence that degree has on propagation scores. Assuming a left stochastic transition matrix, inflation-normalization applies the inflation operator introduced in the Markov Clustering algorithm to the rows of the transition matrix, followed by column normalization. As this is still in development, users are encouraged to use it with caution. More details will be forthcoming as the procedure matures. 
+
+
+
+

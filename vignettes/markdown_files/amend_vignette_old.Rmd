@@ -1,0 +1,482 @@
+---
+title: "AMEND Tutorial"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{AMEND Tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+
+
+
+# Introduction
+
+A powerful approach for the analysis of omics data is to integrate them with molecular interaction networks. Specifically, the integration of microarray/RNA-seq data with protein-protein interaction (PPI) networks has emerged as an effective way to elucidate important genes involved in a biological process. These approaches are often called active module identification (AMI) methods and have the goal of finding a subset of genes (either connected or disconnected) in the PPI network that are relevant to the biological conditions of the experiment.
+
+AMEND is an AMI method that takes as input a PPI network and gene-wise experimental scores (e.g., log fold change) and returns a connected module. AMEND relies on random walk with restart (RWR) and a heuristic solution to the maximum-weight connected subgraph (MWCS) problem to iteratively filter out genes until an optimal subnetwork is found. At each iteration, the current network is input into RWR, with the gene-wise experimental scores serving as seed values. This produces node weights, which are shifted downwards by a certain quantile (called the filtering rate), resulting in both positive and negative node weights. These weights are used to find a maximum-weight connected subgraph. AMEND uses a heuristic solution first implemented in the [BioNet](https://bioconductor.org/packages/release/bioc/html/BioNet.html) package. This produces a subnetwork, which is the input for the next iteration. Each subnetwork is scored by the product of the mean standardized experimental scores (standardized w.r.t. all genes in original network) and the mean core-clustering coefficient (a measure of node connectivity). The process stops when there is no change in subnetwork between iterations or when only 2 nodes remain in the subnetwork. The subnetwork with the largest score is returned. 
+
+A key concept in AMEND is the filtering rate, which determines how the untreated RWR scores are shifted before input into the heuristic MWCS solution. The filtering rate is actually a quantile of the untreated RWR scores. As the quantile decreases, each RWR score is subtracted by a smaller number, resulting in fewer negatively weighted nodes, which results in fewer genes filtered out by the MWCS solution. In this sense, the quantile used to shift the untreated RWR scores is a filtering rate. This filtering rate follows an exponential decay schedule, which has two hyperparameters: the starting filtering rate and the decay value. 
+
+The decay parameter determines the rate at which the shifting quantile decreases. This value is determined by simulation. The decay is set to the maximum value that will allow the algorithm to arrive at a subnetwork of size $n$. If the decay is too large, the filtering rate will approach zero too quickly. This causes the algorithm to stop early since no nodes will be removed with a filtering rate of zero. The parameter $n$ is set by the user and approximates the size of the final module. 
+
+The primary function is `run_AMEND()`, which determines the optimal starting filtering rate by particle swarm optimization (PSO) if no value is given, and then implements the AMEND algorithm with this starting filtering rate, returning a connected subnetwork.  
+
+# Installation
+
+AMEND is hosted on [GitHub](https://github.com/samboyd0/AMEND) and can be installed by running the following code.
+
+
+```r
+devtools::install_github("samboyd0/AMEND", build_vignettes = TRUE)
+```
+
+# Example
+
+This example will focus on a gene expression microarray experiment to illustrate a typical use case for AMEND. 
+
+## GLUT4 Data Description
+
+The dataset that will be used here is a GLUT4 knockout-overexpression (KO-OX) microarray experiment in mouse adipose tissue and is available on the NCBI's Gene Expression Omnibus under accession [GSE35378](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE35378). GLUT4 is a glucose transporter protein involved in the uptake of glucose into the cell. The experiment involved 4 groups of 3 mice each: GLUT4 KO, KO control, GLUT4 OX, and OX control.  
+
+
+```r
+# Accessing data from NCBI GEO 
+gse1 <- GEOquery::getGEO("GSE35378", GSEMatrix = TRUE)
+#> Found 1 file(s)
+#> GSE35378_series_matrix.txt.gz
+#> 
+#> ── Column specification ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+#> cols(
+#>   ID_REF = col_character(),
+#>   GSM867144 = col_double(),
+#>   GSM867145 = col_double(),
+#>   GSM867146 = col_double(),
+#>   GSM867147 = col_double(),
+#>   GSM867148 = col_double(),
+#>   GSM867149 = col_double(),
+#>   GSM867150 = col_double(),
+#>   GSM867151 = col_double(),
+#>   GSM867152 = col_double(),
+#>   GSM867153 = col_double(),
+#>   GSM867154 = col_double(),
+#>   GSM867155 = col_double()
+#> )
+#> File stored at:
+#> /var/folders/fy/htp6vm7s2y92hk7hh6110p840000gn/T//Rtmp9He2FR/GPL81.soft
+#> Warning: 66 parsing failures.
+#>   row     col           expected    actual         file
+#> 12423 SPOT_ID 1/0/T/F/TRUE/FALSE --Control literal data
+#> 12424 SPOT_ID 1/0/T/F/TRUE/FALSE --Control literal data
+#> 12425 SPOT_ID 1/0/T/F/TRUE/FALSE --Control literal data
+#> 12426 SPOT_ID 1/0/T/F/TRUE/FALSE --Control literal data
+#> 12427 SPOT_ID 1/0/T/F/TRUE/FALSE --Control literal data
+#> ..... ....... .................. ......... ............
+#> See problems(...) for more details.
+data <- Biobase::exprs(gse1[[1]])
+head(data)
+#>           GSM867144 GSM867145 GSM867146 GSM867147 GSM867148 GSM867149 GSM867150 GSM867151 GSM867152 GSM867153 GSM867154 GSM867155
+#> 100001_at     21.92     21.90     31.09     21.90     56.51     26.03    203.10    174.11    153.69    189.57    173.95    223.42
+#> 100002_at     58.21     60.57     55.37     76.22     72.60     53.05     58.23     56.80     54.44     69.12     64.58     53.14
+#> 100003_at     57.94     60.65     98.07     60.62     63.18     66.61     49.78     37.22    204.64     48.51     76.01     43.02
+#> 100004_at    163.94    185.69    202.13    205.00    200.66    207.09    117.30    126.97    144.38    121.94    143.69     72.71
+#> 100005_at     56.10     61.13     56.67     73.43     80.79     80.35    447.95    478.10    388.26    403.07    412.29    405.75
+#> 100006_at    138.01    188.80    178.50    201.65    156.47    149.67    253.80    244.09    284.08    349.76    292.77    278.73
+```
+
+## Equivalent Change Index
+
+AMEND was developed to accommodate a recently introduced metric, the equivalent change index (ECI). The ECI measures the extent to which a gene is equivalently or inversely expressed between two treatment-control comparisons. It ranges between -1 and 1, with a value of -1 indicating changes in expression in exactly opposing ways (e.g., expression was halved between groups for one experiment but doubled for the other), and a value of 1 indicating changes in expression in exactly equivalent ways (e.g., expression was doubled between groups for both experiments). Formally, the ECI for gene $i$ is $$\lambda_i=sign(\beta_{i1}*\beta_{i2})\frac{min(|\beta_{i1}|,|\beta_{i2}|)}{max(|\beta_{i1}|,|\beta_{i2}|)}(1-max(p_{i1}, p_{i2}))$$ where $\beta_{ij}$ represents the log fold change and $p_{ij}$ the p-value for gene $i$ from experiment $j$. 
+
+## Differential Expression Analysis 
+
+This section will show the steps taken to generate the ECIs and log fold changes for the GLUT4 dataset. Preprocessing involves background subtracting and normalizing, as well as checking for zero sample variances. 
+
+
+```r
+# Background-subtracting and normalizing with oligo package
+re <- oligo::basicRMA(data, row.names(data))
+#> Background correcting
+#> Normalizing
+#> Calculating Expression
+
+# checking for genes with zero sample variance
+r <- matrix()
+for(i in 1:nrow(re)){
+  t <- sd(re[i,])
+  if(t == 0){
+    r <- c(r, i)
+  }
+}
+var_check <- r[-1]
+```
+
+Next, the _limma_ package is used to fit linear models to the expression data. $log_2$ fold changes are obtained for the appropriate group comparisons, along with their unadjusted p-values. 
+
+
+```r
+# Design matrix
+groups = c(rep("OX", 3), rep("OX_ctrl", 3), rep("KO", 3), rep("KO_ctrl", 3))
+X = stats::model.matrix(~0+groups)
+colnames(X) = sort(unique(groups))
+
+# Fitting linear models
+fit <- limma::lmFit(re[-var_check,], design = X)
+
+# Getting contrast coefficents for KO vs. Ctrl 1
+cnt_KO = limma::makeContrasts(contrasts = "KO-KO_ctrl", levels = colnames(X))
+fit_KO = limma::contrasts.fit(fit, contrasts = cnt_KO)
+fit_KO <- limma::eBayes(fit_KO)
+tt_KO <- limma::topTable(fit_KO, number = 100000, adjust.method = "BH")
+esize_KO <- tt_KO$logFC
+pval_KO <- tt_KO$P.Value
+names(esize_KO) <- row.names(tt_KO)
+names(pval_KO) <- row.names(tt_KO)
+head(esize_KO)
+#>  93109_f_at 101565_f_at 101574_f_at 101572_f_at   101828_at   102635_at 
+#>    1.850815    2.375126    2.405287    1.998683    1.605275   -1.792900
+
+# Getting contrast coefficents for OX vs. Ctrl 2
+cnt_OX = limma::makeContrasts(contrasts = "OX-OX_ctrl", levels = colnames(X))
+fit_OX = limma::contrasts.fit(fit, contrasts = cnt_OX)
+fit_OX <- limma::eBayes(fit_OX)
+tt_OX <- limma::topTable(fit_OX, number = 100000, adjust.method = "BH")
+esize_OX <- tt_OX$logFC
+pval_OX <- tt_OX$P.Value
+names(esize_OX) <- row.names(tt_OX)
+names(pval_OX) <- row.names(tt_OX)
+head(esize_OX)
+#>   104424_at    97752_at   101473_at 101638_s_at  95339_r_at    93996_at 
+#>    2.943478    2.333525   -1.434809   -3.940409    1.717504   -1.433025
+```
+
+We are now able to calculate the ECIs for each probe in the microarray experiment using the R package _ECEA_, which can be installed from [GitHub](https://github.com/jeffreyat/ECEA) with the following code: `devtools::install_github("jeffreyat/ECEA")`. 
+
+
+```r
+# Getting ECI values for each gene
+eci <- ECEA::getECI(smd1 = esize_OX, smd2 = esize_KO, p1 = pval_OX, p2 = pval_KO)
+eci <- data.frame(ECI = eci, row.names = names(eci))
+```
+
+The probe IDs are now mapped to gene symbols. Along with the ECI, we will also extract the $log_2$ fold changes for the GLUT4 KO vs. Control groups for downstream analysis.
+
+
+```r
+# Mapping probe identifier to gene symbol & aggregating ECI values and logFC values for KO vs. Ctrl
+datFC = data.frame(logFC = tt_KO$logFC * (1 - tt_KO$P.Value), row.names = row.names(tt_KO))
+dat <- eci
+sym_map <- mgu74av2.db::mgu74av2SYMBOL
+
+# Map the probes
+genes <- unlist(as.list(sym_map[rownames(dat)]))
+
+# Remove probes that didn't map
+genes <- na.omit(genes)
+common <- intersect(names(genes), rownames(dat))
+genes <- genes[common]
+dat <- dat[common,]
+datFC = datFC[common,]
+
+# Aggregate probes... take median ECI if multiple probes map to same gene
+dat <- aggregate(dat, by = list(genes), FUN = median)
+names(dat) <- c("Gene", "ECI")
+row.names(dat) <- dat$Gene
+dat <- dat %>% dplyr::select(-Gene)
+
+# Aggregate probes... take median logFC if multiple probes map to same gene
+datFC <- aggregate(datFC, by = list(genes), FUN = median)
+names(datFC) <- c("Gene", "logFC")
+row.names(datFC) <- datFC$Gene
+datFC <- datFC %>% dplyr::select(-Gene)
+```
+
+
+## Protein-Protein Interaction Network
+
+For this example, a _mus musculus_ PPI network is downloaded from STRING (v11.0). Edges appear twice in the downloaded file, necessitating a helper function to remove the duplicate edges. Only interactions with a confidence score $\ge$ 0.8 are kept.
+
+
+```r
+# Getting mapping between Mouse Gene Symbols <--> Ensembl Peptide IDs
+gene_symbols <- row.names(dat)
+ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+mapping <- biomaRt::getBM(attributes=c("mgi_symbol", "ensembl_peptide_id"),
+                          filters = "mgi_symbol",
+                          values = gene_symbols,
+                          mart = ensembl)
+mapping <- mapping %>% dplyr::filter(ensembl_peptide_id != "")
+
+# Function for removing the duplicate edges from String PPI network 
+remove_duplicate_edges = function(x){
+  g = igraph::graph_from_edgelist(as.matrix(x[,1:2]), directed = F)
+  igraph::E(g)$weight = x[,3] / 1000
+  adjM = as.matrix(igraph::as_adjacency_matrix(g, attr = "weight", sparse = T)) / 2
+  g = igraph::graph_from_adjacency_matrix(adjM, mode = "undirected", weighted = TRUE)
+  el = igraph::as_edgelist(g)
+  return(cbind(el, igraph::E(g)$weight))
+}
+
+# Loading in mus musculus PPIN from String v11.0... 
+# Can be downloaded from STRING website, but make sure you're on the right version
+file_path = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt"
+ppi = data.table::fread(file = file_path,
+                        header = TRUE, sep = " ") %>%
+  dplyr::filter(combined_score >= 800) %>%
+  dplyr::mutate(protein1 = do.call(c, lapply(strsplit(protein1, "\\."), function(x) x[2])),
+         protein2 = do.call(c, lapply(strsplit(protein2, "\\."), function(x) x[2])))  %>%
+  as.data.frame() %>%
+  remove_duplicate_edges()
+head(ppi)
+#>      [,1]                 [,2]                 [,3]   
+#> [1,] "ENSMUSP00000000001" "ENSMUSP00000017460" "0.9"  
+#> [2,] "ENSMUSP00000000001" "ENSMUSP00000039107" "0.917"
+#> [3,] "ENSMUSP00000000001" "ENSMUSP00000052894" "0.916"
+#> [4,] "ENSMUSP00000000001" "ENSMUSP00000025842" "0.904"
+#> [5,] "ENSMUSP00000000001" "ENSMUSP00000045335" "0.916"
+#> [6,] "ENSMUSP00000000001" "ENSMUSP00000126191" "0.916"
+```
+
+Not all genes will map to a protein in the PPI network. Conversely, some proteins won't correspond to a gene in the experiment. Only genes and proteins that have a mapping will be kept, thus ensuring that each node in the network has an experimental score (e.g., ECI or log fold change).
+
+
+```r
+# Keeping only genes that map to a protein in PPIN
+mapping = mapping %>%
+  dplyr::mutate(ppi = ensembl_peptide_id %in% ppi[,1] | ensembl_peptide_id %in% ppi[,2]) %>%
+  dplyr::filter(ppi) %>%
+  dplyr::group_by(mgi_symbol) %>%
+  dplyr::filter(row_number() == 1) %>%
+  as.data.frame()
+
+# Keeping only proteins that map to a gene in the experiment
+ppi = ppi[ppi[,1] %in% mapping$ensembl_peptide_id & ppi[,2] %in% mapping$ensembl_peptide_id,]
+```
+
+The input network for AMEND is required to be connected, so we will take the largest connected component. The ECIs and $log_2$ fold changes are then set as vertex attributes. 
+
+
+```r
+# Getting largest connected component of PPIN as an igraph object
+glut4_graph = igraph::graph_from_edgelist(as.matrix(ppi[,1:2]), directed = FALSE)
+igraph::E(glut4_graph)$weight = as.numeric(ppi[,3])
+igraph::V(glut4_graph)$symbol = mapping$mgi_symbol[match(igraph::V(glut4_graph)$name, mapping$ensembl_peptide_id)]
+if(!igraph::is_connected(glut4_graph)){
+  l = igraph::decompose(glut4_graph)
+  glut4_graph = l[[which.max(do.call(c, lapply(l, igraph::vcount)))]]
+}
+
+# Setting vertex attribute ECI and logFC (logFC for KO vs. Ctrl)
+igraph::V(glut4_graph)$ECI = dat$ECI[match(igraph::V(glut4_graph)$symbol, row.names(dat))]
+igraph::V(glut4_graph)$logFC = datFC$logFC[match(igraph::V(glut4_graph)$symbol, row.names(datFC))]
+glut4_graph
+#> IGRAPH 475042f UNW- 6435 120608 -- 
+#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), weight (e/n)
+#> + edges from 475042f (vertex names):
+#>  [1] ENSMUSP00000000001--ENSMUSP00000017460 ENSMUSP00000000001--ENSMUSP00000039107 ENSMUSP00000000001--ENSMUSP00000052894 ENSMUSP00000000001--ENSMUSP00000025842
+#>  [5] ENSMUSP00000000001--ENSMUSP00000045335 ENSMUSP00000000001--ENSMUSP00000093978 ENSMUSP00000000001--ENSMUSP00000040847 ENSMUSP00000000001--ENSMUSP00000066822
+#>  [9] ENSMUSP00000000001--ENSMUSP00000076155 ENSMUSP00000000001--ENSMUSP00000052444 ENSMUSP00000000001--ENSMUSP00000052581 ENSMUSP00000000001--ENSMUSP00000053489
+#> [13] ENSMUSP00000000001--ENSMUSP00000028883 ENSMUSP00000000001--ENSMUSP00000045911 ENSMUSP00000000001--ENSMUSP00000137518 ENSMUSP00000000001--ENSMUSP00000047586
+#> [17] ENSMUSP00000000001--ENSMUSP00000068731 ENSMUSP00000000001--ENSMUSP00000024004 ENSMUSP00000000001--ENSMUSP00000005406 ENSMUSP00000000001--ENSMUSP00000065799
+#> [21] ENSMUSP00000000001--ENSMUSP00000031146 ENSMUSP00000000001--ENSMUSP00000074885 ENSMUSP00000000001--ENSMUSP00000038884 ENSMUSP00000000001--ENSMUSP00000065000
+#> [25] ENSMUSP00000000001--ENSMUSP00000053638 ENSMUSP00000000001--ENSMUSP00000019074 ENSMUSP00000000001--ENSMUSP00000093311 ENSMUSP00000000001--ENSMUSP00000063136
+#> [29] ENSMUSP00000000001--ENSMUSP00000127024 ENSMUSP00000000001--ENSMUSP00000047646 ENSMUSP00000000001--ENSMUSP00000063986 ENSMUSP00000000001--ENSMUSP00000030815
+#> + ... omitted several edges
+```
+
+`run_AMEND()` can also work with an adjacency matrix and a vector of node scores, instead of a graph.
+
+
+```r
+# Getting adjacency matrix from graph
+glut4_adjM = igraph::as_adjacency_matrix(glut4_graph, attr = "weight", sparse = T)
+glut4_adjM[1:6,1:6]
+#> 6 x 6 sparse Matrix of class "dgCMatrix"
+#>                    ENSMUSP00000000001 ENSMUSP00000017460 ENSMUSP00000039107 ENSMUSP00000052894 ENSMUSP00000025842 ENSMUSP00000045335
+#> ENSMUSP00000000001              .                  0.900              0.917              0.916              0.904              0.916
+#> ENSMUSP00000017460              0.900              .                  0.901              0.901              0.932              0.901
+#> ENSMUSP00000039107              0.917              0.901              .                  0.908              0.905              0.900
+#> ENSMUSP00000052894              0.916              0.901              0.908              .                  0.906              0.901
+#> ENSMUSP00000025842              0.904              0.932              0.905              0.906              .                  0.905
+#> ENSMUSP00000045335              0.916              0.901              0.900              0.901              0.905              .
+
+# Creating vector of gene-wise experimental scores
+eci_scores = igraph::V(glut4_graph)$ECI
+logFC_KO = igraph::V(glut4_graph)$logFC
+head(eci_scores)
+#> [1]  0.0053260160 -0.1573755452 -0.0666034318  0.3836840933  0.0127265124 -0.0009255554
+head(logFC_KO)
+#> [1]  0.0004979644 -0.1002514365  0.0091279150  0.1068692232 -0.1118967908 -0.0078257876
+```
+
+## Running AMEND with ECI
+
+Now that we have analyzed our microarray data and obtained a PPI network, we can continue with the active module identification step. It is important to clarify the biological question of interset that we want to answer. For the GLUT4 KO-OX experiment, it may be of interest to know which genes are affected in opposing ways by the two treatments. A gene that is up-regulated in the KO-control arm and down-regulated in the OX-control arm suggests a close association of that gene with GLUT4.
+The ECI is well suited to answer this type of question. Since we are interested in inversely regulated genes, we will want to set `data.type = "ECI"` and `eci.direction = "negative"`. We will set `n = 25` to specify the approximate size of the final module.
+
+The `normalize` argument specifies how to normalize the adjacency matrix for random walk with restart (RWR). `normalize = "core"` will use node coreness to normalize the adjacecy matrix. The seed.weight argument specifies how to transform the ECI values for use as seed values in RWR. Seed values must be non-negative, but ECI has a range of $[-1,1]$, necessitating some transformation. The scheme used in AMEND is to take the absolute value of the ECIs, then weight the values _not_ in the direction of interest by some constant in $[0,1]$. For example, when interested in negative ECIs, $seed.weight = 0.5$ translates into weighting a positive ECI gene half that of a negative ECI gene of equal magnitude. 
+
+
+```r
+# Using the igraph object as input
+module = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", eci.direction = "negative", 
+                   normalize = "core", seed.weight = 0.5, random_seed = 1)
+#> S=3, K=3, p=0.7037, w0=0.729, w1=0.729, c.p=1.494, c.g=1.494
+#> v.max=0.5, d=0.6, vectorize=FALSE, hybrid=off
+#> Starting filtering rate: 0.359
+#> *** Converged! ***
+#> Starting filtering rate: 0.423
+#> *** Converged! ***
+#> Starting filtering rate: 0.544
+#> *** Converged! ***
+#> Starting filtering rate: 0.349
+#> *** Converged! ***
+#> Starting filtering rate: 0.682
+#> *** Converged! ***
+#> Starting filtering rate: 0.631
+#> *** Converged! ***
+#> Starting filtering rate: 0.8
+#> *** Converged! ***
+#> Starting filtering rate: 0.39
+#> *** Converged! ***
+#> Starting filtering rate: 0.76
+#> *** Converged! ***
+#> Maximal number of iterations reached
+#> *** Converged! ***
+
+# Can also use the adjacency matrix and vector of node scores
+if(0){
+  module = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
+                     eci.direction = "negative", normalize = "core", seed.weight = 0.5, random_seed = 1)
+}
+```
+
+Let's inspect the module returned by `run_AMEND()`. A named list is returned containing the final module, module score, a list of node names contained in the intermediate subnetworks, network statistics for all iterations, the runtime, and a list of the input parameters. 
+
+
+```r
+# The final module
+module$module
+#> IGRAPH 8a5ddda UNWB 25 40 -- 
+#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), score (v/n), type (v/c), weight (e/n)
+#> + edges from 8a5ddda (vertex names):
+#>  [1] ENSMUSP00000076155--ENSMUSP00000047586 ENSMUSP00000076155--ENSMUSP00000047646 ENSMUSP00000047586--ENSMUSP00000047646 ENSMUSP00000076155--ENSMUSP00000058040
+#>  [5] ENSMUSP00000047586--ENSMUSP00000058040 ENSMUSP00000047646--ENSMUSP00000058040 ENSMUSP00000076155--ENSMUSP00000024988 ENSMUSP00000047586--ENSMUSP00000024988
+#>  [9] ENSMUSP00000047646--ENSMUSP00000024988 ENSMUSP00000058040--ENSMUSP00000024988 ENSMUSP00000076155--ENSMUSP00000021346 ENSMUSP00000047586--ENSMUSP00000021346
+#> [13] ENSMUSP00000024988--ENSMUSP00000086795 ENSMUSP00000024988--ENSMUSP00000032825 ENSMUSP00000086795--ENSMUSP00000032825 ENSMUSP00000024988--ENSMUSP00000002979
+#> [17] ENSMUSP00000086795--ENSMUSP00000002979 ENSMUSP00000032825--ENSMUSP00000002979 ENSMUSP00000076155--ENSMUSP00000027812 ENSMUSP00000024988--ENSMUSP00000041250
+#> [21] ENSMUSP00000024988--ENSMUSP00000065393 ENSMUSP00000041250--ENSMUSP00000065393 ENSMUSP00000065393--ENSMUSP00000095316 ENSMUSP00000047646--ENSMUSP00000028259
+#> [25] ENSMUSP00000047646--ENSMUSP00000032198 ENSMUSP00000028259--ENSMUSP00000032198 ENSMUSP00000002979--ENSMUSP00000099935 ENSMUSP00000024988--ENSMUSP00000020549
+#> [29] ENSMUSP00000095316--ENSMUSP00000103007 ENSMUSP00000095316--ENSMUSP00000031897 ENSMUSP00000095316--ENSMUSP00000020284 ENSMUSP00000031897--ENSMUSP00000020284
+#> + ... omitted several edges
+
+# data.frame of network stats for all iterations
+module$stats
+#>   Decay Restart parameter Network score Avg Z Avg CCC Nodes Edges Density Filtering rate Observed filtering rate Seed weight
+#> 1  0.28             0.990         0.456 0.483   0.943  1249  6694   0.009          0.760                   0.806         0.5
+#> 2  0.28             0.990         1.167 1.245   0.938   416  1303   0.015          0.574                   0.667         0.5
+#> 3  0.28             0.990         1.913 2.039   0.938   193   444   0.024          0.434                   0.536         0.5
+#> 4  0.28             0.932         2.238 2.349   0.953   123   257   0.034          0.328                   0.363         0.5
+#> 5  0.28             0.851         2.325 2.432   0.956    92   178   0.043          0.248                   0.252         0.5
+#> 6  0.28             0.920         2.364 2.482   0.952    54   106   0.074          0.187                   0.413         0.5
+#> 7  0.28             0.990         2.523 2.523   1.000    27    49   0.140          0.142                   0.500         0.5
+#> 8  0.28             0.897         2.533 2.533   1.000    26    45   0.138          0.107                   0.037         0.5
+#> 9  0.28             0.897         2.541 2.541   1.000    25    40   0.133          0.081                   0.038         0.5
+
+# Runtime
+module$time
+#> Time difference of 34.47288 mins
+```
+
+## Running AMEND with log fold change 
+
+AMEND can also accommodate log fold changes. We have log fold changes for the GLUT4 KO vs. control DE analysis. Suppose we are interested in genes with large log fold changes, regardless of direction. Then we would set `data.type = "logFC"` and `logFC.direction = "both"`.
+
+
+```r
+# Using the igraph object as input
+module2 = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", logFC.direction = "both", 
+                   normalize = "core", seed.weight = 0.5, random_seed = 1)
+#> S=3, K=3, p=0.7037, w0=0.729, w1=0.729, c.p=1.494, c.g=1.494
+#> v.max=0.5, d=0.6, vectorize=FALSE, hybrid=off
+#> Starting filtering rate: 0.359
+#> *** Converged! ***
+#> Starting filtering rate: 0.423
+#> *** Converged! ***
+#> Starting filtering rate: 0.544
+#> *** Converged! ***
+#> Starting filtering rate: 0.455
+#> *** Converged! ***
+#> Starting filtering rate: 0.686
+#> *** Converged! ***
+#> Starting filtering rate: 0.659
+#> *** Converged! ***
+#> Starting filtering rate: 0.8
+#> *** Converged! ***
+#> Starting filtering rate: 0.747
+#> *** Converged! ***
+#> Starting filtering rate: 0.771
+#> *** Converged! ***
+#> Maximal number of iterations reached
+#> *** Converged! ***
+
+# Can also use the adjacency matrix and vector of node scores
+if(0){
+  module2 = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
+                      logFC.direction = "both", normalize = "core", seed.weight = 0.5, random_seed = 1)
+}
+```
+
+Here are the results. 
+
+
+```r
+# The final module
+module2$module
+#> IGRAPH 58295a5 UNWB 17 31 -- 
+#> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), score (v/n), type (v/c), weight (e/n)
+#> + edges from 58295a5 (vertex names):
+#>  [1] ENSMUSP00000053489--ENSMUSP00000024004 ENSMUSP00000053489--ENSMUSP00000099423 ENSMUSP00000024004--ENSMUSP00000099423 ENSMUSP00000053489--ENSMUSP00000001008
+#>  [5] ENSMUSP00000099423--ENSMUSP00000001008 ENSMUSP00000108367--ENSMUSP00000132226 ENSMUSP00000108367--ENSMUSP00000093101 ENSMUSP00000132226--ENSMUSP00000093101
+#>  [9] ENSMUSP00000053489--ENSMUSP00000026845 ENSMUSP00000099423--ENSMUSP00000026845 ENSMUSP00000001008--ENSMUSP00000026845 ENSMUSP00000108367--ENSMUSP00000026845
+#> [13] ENSMUSP00000132226--ENSMUSP00000026845 ENSMUSP00000093101--ENSMUSP00000026845 ENSMUSP00000108367--ENSMUSP00000082130 ENSMUSP00000132226--ENSMUSP00000082130
+#> [17] ENSMUSP00000093101--ENSMUSP00000082130 ENSMUSP00000026845--ENSMUSP00000082130 ENSMUSP00000132226--ENSMUSP00000032203 ENSMUSP00000093101--ENSMUSP00000032203
+#> [21] ENSMUSP00000082130--ENSMUSP00000032203 ENSMUSP00000099423--ENSMUSP00000025691 ENSMUSP00000099423--ENSMUSP00000017799 ENSMUSP00000026845--ENSMUSP00000017799
+#> [25] ENSMUSP00000017799--ENSMUSP00000107214 ENSMUSP00000108367--ENSMUSP00000022592 ENSMUSP00000026845--ENSMUSP00000022592 ENSMUSP00000017799--ENSMUSP00000022592
+#> [29] ENSMUSP00000132226--ENSMUSP00000073695 ENSMUSP00000026845--ENSMUSP00000092492 ENSMUSP00000032203--ENSMUSP00000000924
+
+# data.frame of network stats for all iterations
+module2$stats
+#>    Decay Restart parameter Network score Avg Z Avg CCC Nodes Edges Density Filtering rate Observed filtering rate Seed weight
+#> 1   0.28             0.990         1.141 1.230   0.928  1222  7311   0.010          0.771                   0.810         0.5
+#> 2   0.28             0.990         2.199 2.379   0.924   398  1410   0.018          0.583                   0.674         0.5
+#> 3   0.28             0.990         3.200 3.425   0.934   176   523   0.034          0.440                   0.558         0.5
+#> 4   0.28             0.944         3.991 4.223   0.945   108   327   0.057          0.333                   0.386         0.5
+#> 5   0.28             0.897         4.485 4.740   0.946    72   195   0.076          0.252                   0.333         0.5
+#> 6   0.28             0.758         4.837 4.965   0.974    58   159   0.096          0.190                   0.194         0.5
+#> 7   0.28             0.804         5.098 5.233   0.974    49   124   0.105          0.144                   0.155         0.5
+#> 8   0.28             0.990         5.267 5.315   0.991    48   121   0.107          0.109                   0.020         0.5
+#> 9   0.28             0.851         5.421 5.614   0.965    40    95   0.122          0.082                   0.167         0.5
+#> 10  0.28             0.967         5.611 5.777   0.971    38    83   0.118          0.062                   0.050         0.5
+#> 11  0.28             0.897         5.854 6.022   0.972    27    68   0.194          0.047                   0.289         0.5
+#> 12  0.28             0.851         6.028 6.106   0.987    26    62   0.191          0.035                   0.037         0.5
+#> 13  0.28             0.804         6.081 6.163   0.987    25    60   0.200          0.027                   0.038         0.5
+#> 14  0.28             0.804         6.123 6.209   0.986    24    59   0.214          0.020                   0.040         0.5
+#> 15  0.28             0.804         6.161 6.252   0.986    23    58   0.229          0.015                   0.042         0.5
+#> 16  0.28             0.711         6.194 6.289   0.985    22    57   0.247          0.012                   0.043         0.5
+#> 17  0.28             0.665         6.211 6.312   0.984    21    56   0.267          0.009                   0.045         0.5
+#> 18  0.28             0.944         6.306 6.605   0.955    20    45   0.237          0.007                   0.048         0.5
+#> 19  0.28             0.897         6.649 6.767   0.982    19    41   0.240          0.005                   0.050         0.5
+#> 20  0.28             0.711         6.813 6.942   0.981    18    36   0.235          0.004                   0.053         0.5
+#> 21  0.28             0.897         7.022 7.163   0.980    17    31   0.228          0.003                   0.056         0.5
+
+# Runtime
+module2$time
+#> Time difference of 21.80668 mins
+```
+
+
