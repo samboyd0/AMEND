@@ -40,8 +40,8 @@ accessed with the following code.
 vignette("amend_vignette", package = "AMEND")
 ```
 
-A short tutorial is available in the **Tutorials** folder on the *AMEND*
-GitHub
+A short tutorial is available in the *vignettes/Tutorials* folder on the
+AMEND GitHub
 page.
 
 <!-- ## Example -->

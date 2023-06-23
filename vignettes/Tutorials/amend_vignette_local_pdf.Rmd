@@ -1,0 +1,152 @@
+---
+title: "AMEND Tutorial"
+output: pdf_document
+vignette: >
+  %\VignetteIndexEntry{AMEND Tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<!---
+Run this code to locally knit the vignette.
+rmarkdown::render(input = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/markdown_files/amend_vignette_local_pdf.Rmd",
+                  output_file = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/markdown_files/amend_vignette")
+
+Resource:
+https://ropensci.org/blog/2019/12/08/precompute-vignettes/
+--->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  collapse = TRUE,
+  comment = "#>",
+  include = TRUE
+)
+```
+
+```{r setup, include = FALSE, echo = FALSE}
+library(AMEND)
+
+```
+
+# Introduction
+
+A powerful approach for the analysis of omics data is to integrate them with molecular interaction networks. Specifically, the integration of microarray/RNA-seq data with protein-protein interaction (PPI) networks has emerged as an effective way to elucidate important genes involved in a biological process. These approaches are often called active module identification (AMI) methods and have the goal of finding a subset of genes (either connected or disconnected) in the PPI network that are relevant to the biological conditions of the experiment.
+
+AMEND is an AMI method that takes as input a PPI network and gene-wise experimental scores (e.g., log fold change) and returns a connected module. AMEND relies on random walk with restart (RWR) and a heuristic solution to the maximum-weight connected subgraph (MWCS) problem to iteratively filter out genes until an optimal subnetwork is found. At each iteration, the current network is input into RWR, with the gene-wise experimental scores serving as seed values. This produces node weights, which are shifted downwards by a certain quantile (called the filtering rate), resulting in both positive and negative node weights. These weights are used to find a maximum-weight connected subgraph. AMEND uses a heuristic solution first implemented in the [BioNet](https://bioconductor.org/packages/release/bioc/html/BioNet.html) package. This produces a subnetwork, which is the input for the next iteration. Each subnetwork is scored by the product of the mean standardized experimental scores (standardized w.r.t. all genes in original network) and the mean core-clustering coefficient (a measure of node connectivity). The process stops when there is no change in subnetwork between iterations or when only 2 nodes remain in the subnetwork. The subnetwork with the largest score is returned. 
+
+A key concept in AMEND is the filtering rate, which determines how the untreated RWR scores are shifted before input into the heuristic MWCS solution. The filtering rate is actually a quantile of the untreated RWR scores. As the quantile decreases, each RWR score is subtracted by a smaller number, resulting in fewer negatively weighted nodes, which results in fewer genes filtered out by the MWCS solution. In this sense, the quantile used to shift the untreated RWR scores is a filtering rate. This filtering rate follows an exponential decay schedule, which has two hyperparameters: the starting filtering rate and the decay value. 
+
+The decay parameter determines the rate at which the shifting quantile decreases. This value is determined by simulation. The decay is set to the maximum value that will allow the algorithm to arrive at a subnetwork of size $n$. If the decay is too large, the filtering rate will approach zero too quickly. This causes the algorithm to stop early since no nodes will be removed with a filtering rate of zero. The parameter $n$ is set by the user and approximates the size of the final module. 
+
+The primary function is `run_AMEND()`, which implements the AMEND algorithm and returns a connected subnetwork. 
+
+# Installation
+
+AMEND is hosted on [GitHub](https://github.com/samboyd0/AMEND) and can be installed by running the following code.
+
+```{r install, eval = FALSE, include = TRUE}
+devtools::install_github("samboyd0/AMEND", build_vignettes = TRUE)
+```
+
+# Example
+
+This example will focus on a gene expression microarray experiment to illustrate a typical use case for AMEND. 
+
+## GLUT4 Data Description
+
+The dataset that will be used here is a GLUT4 knockout-overexpression (KO-OX) microarray experiment in mouse adipose tissue and is available on the NCBI's Gene Expression Omnibus under accession [GSE35378](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE35378). GLUT4 is a glucose transporter protein involved in the uptake of glucose into the cell. The experiment involved 4 groups of 3 mice each: GLUT4 KO, KO control, GLUT4 OX, and OX control. 
+
+The data is contained in the `AMEND` package. Let's inspect the PPI network and the vectors of data values, which will be described in the next section. 
+
+```{r data_descr}
+# Mus musculus PPI network. 
+# This is a reduced version of the full PPIN obtained by 
+# taking the largest cluster from the Louvain topological clustering algorithm
+glut4_graph
+
+# Named vector of ECI scores (Equivalent Change Index)
+head(eci_scores)
+
+# Named vector of log fold changes for GLUT4-KO vs. Control
+head(logFC_KO)
+
+```
+
+## Equivalent Change Index
+
+AMEND was developed to accommodate a recently introduced metric, the equivalent change index (ECI). The ECI measures the extent to which a gene is equivalently or inversely expressed between two treatment-control comparisons. It ranges between -1 and 1, with a value of -1 indicating changes in expression in exactly opposing ways (e.g., expression was halved between groups for one experiment but doubled for the other), and a value of 1 indicating changes in expression in exactly equivalent ways (e.g., expression was doubled between groups for both experiments). Formally, the ECI for gene $i$ is $$\lambda_i=sign(\beta_{i1}*\beta_{i2})\frac{min(|\beta_{i1}|,|\beta_{i2}|)}{max(|\beta_{i1}|,|\beta_{i2}|)}(1-max(p_{i1}, p_{i2}))$$ where $\beta_{ij}$ represents the log fold change and $p_{ij}$ the p-value for gene $i$ from experiment $j$. 
+
+## Running AMEND with ECI
+
+Before applying any AMI method, it is important to clarify the biological question of interset that we want to answer. For the GLUT4 KO-OX experiment, it may be of interest to know which genes are affected in opposing ways by the two treatments. A gene that is up-regulated in the KO-control arm and down-regulated in the OX-control arm suggests a close association of that gene with GLUT4.
+The ECI is well suited to answer this type of question. Since we are interested in inversely regulated genes, we will want to set `data.type = "ECI"` and `DOI = "negative"`. We will set `n = 25` to specify the approximate size of the final module.
+
+The `normalize` argument specifies how to normalize the adjacency matrix for random walk with restart (RWR). `normalize = "core"` will use node coreness to normalize the adjacecy matrix, whereas `normalize = "degree"` will column normalize the adjacency matrix using node degree. The seed.weight argument specifies how to transform the ECI values for use as seed values in RWR. Seed values must be non-negative, but ECI has a range of $[-1,1]$, necessitating some transformation. The scheme used in AMEND is to take the absolute value of the ECIs, then weight the values _not_ in the direction of interest by some constant in $[0,1]$. For example, when interested in negative ECIs, $seed.weight = 0.5$ translates into weighting a positive ECI gene half that of a negative ECI gene of equal magnitude. 
+
+```{r runECI}
+# Using the igraph object as input
+module = run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", DOI = "negative", 
+                   normalize = "degree", seed.weight = 0.5)
+
+# Can also use the adjacency matrix and vector of node scores
+if(0){
+  module = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
+                     DOI = "negative", normalize = "degree", seed.weight = 0.5)
+}
+```
+
+Let's inspect the module returned by `run_AMEND()`. A named list is returned containing the final module, module score, a list of node names contained in the intermediate subnetworks, network statistics for all iterations, the runtime, and a list of the input parameters. 
+
+```{r inspectECI}
+# The final module
+module$module
+
+# data.frame of network statistics for all iterations
+module$stats
+
+# Runtime
+module$time
+```
+
+## Running AMEND with log fold change 
+
+AMEND can also accommodate log fold changes. We have log fold changes for the GLUT4-KO vs. control DE analysis. Suppose we are interested in genes with large log fold changes, regardless of direction. Then we would set `data.type = "logFC"` and `DOI = "both"`.
+
+```{r runLogFC}
+# Using the igraph object as input
+module2 = run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", DOI = "both", 
+                   normalize = "degree", seed.weight = 0.5)
+
+# Can also use the adjacency matrix and vector of node scores
+if(0){
+  module2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
+                      DOI = "both", normalize = "degree", seed.weight = 0.5)
+}
+```
+
+Here are the results. 
+
+```{r inspectLogFC}
+# The final module
+module2$module
+
+# data.frame of network statistics for all iterations
+module2$stats
+
+# Runtime
+module2$time
+```
+
+Suppose that we want to investigate an intermediate subnetwork that was generated during `run_AMEND()`, either because the final module was too small or because we want to see which genes were filtered out. From the output of `module2$stats`, let's choose the subnetwork from iteration 6. We can retrieve this subnetwork by using the function `get_subnetwork()`. We can also look at the nodes in this subnetwork directly from the `module2` object.
+
+```{r get_subnet_Ex}
+# Using get_subnetwork()
+subnet6 = get_subnetwork(amend_object = module2, k = 6)
+subnet6
+
+# Directly from module2
+module2$subnetworks[[6]]
+```
+
