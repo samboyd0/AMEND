@@ -34,12 +34,15 @@ devtools::install_github("samboyd0/AMEND", build_vignettes = TRUE)
 ## Vignette
 
 A vignette is available that illustrates how to use AMEND. It can be
-accessed with the following
-code.
+accessed with the following code.
 
 ``` r
 vignette("amend_vignette", package = "AMEND")
 ```
+
+A short tutorial is available in the **Tutorials** folder on the *AMEND*
+GitHub
+page.
 
 <!-- ## Example -->
 
