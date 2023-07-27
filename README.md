@@ -12,15 +12,15 @@ Diffusion) is an algorithm designed to find a subset of connected nodes
 in a molecular interaction network that have large experimental values.
 It makes use of random walk with restart (RWR) to create node weights,
 and a heuristic approach for solving the Maximum-weight Connected
-Subgraph problem using these weights. This is performed iteratively
-until an optimal subnetwork (i.e., module) is found.
+Subgraph problem using these weights. The resulting subnetwork is then scored based on average experimental values and connectivity, and it is used as input into RWR for the next iteration. This process is performed iteratively
+until an optimal subnetwork (i.e., module) is found. Details on design and benchmarking can be found in the [manuscript](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10324253/) (_BMC Bioinformatics_).
 
 For example, a user could have log2 fold changes from a differential
 expression analysis of RNA-seq data comparing a treatment group to a
 control group. Genes included in the experiment can be mapped to a
 protein-protein interaction network, along with their log2 fold changes.
 This network is the main input into AMEND, from which a single module is
-returned.
+returned. 
 
 ## Installation
 
