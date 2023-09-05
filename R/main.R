@@ -15,7 +15,7 @@
 #'
 #' Since RWR requires seed values between 0 and 1, node scores often need to be transformed. 'seed.scheme' is used when data.type=ECI. 'zero_bottom' gives ECI values of zero the lowest weight, regardless of DOI. 'zero_middle' linearly transforms ECI values s.t. values in DOI are largest, values _not_ in DOI are smallest, and ECIs of zero are in the middle.
 #'
-#' The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by applying a row-inflation then column-normalization operation on the transition matrix (assumed to be a left stochastic matrix).
+#' The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by scaling the transition matrix to be approximately bistochastic.
 #'
 #' See \url{link/to/paper} for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
 #'
@@ -34,7 +34,7 @@
 #' @param jump Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE)
 #' @param net1.weight Relative weight to give to nodes of network 1 (the first type to appear in node_type).
 #' @param verbose Logical. Whether to output current iteration number to show progress
-#' @param degree.bias Logical. Whether to mitigate degree bias through inflation-normalization of transition matrix prior to RWR. Experimental. See Details
+#' @param degree.bias Logical. Whether to mitigate degree bias through bistochastic scaling of transition matrix prior to RWR. See Details
 #' @param identifier For use when performing many runs of AMEND to keep track of progress
 #'
 #' @return a named list with the following elements:
@@ -243,8 +243,8 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, node_scores = NULL, node_
       # Normalize adjacency matrix to get transition matrix
       n.adjM <- transition_matrix(g = subg[[1]], adjM = adj, norm = normalize, heterogeneous = heterogeneous, node_type = V(subg[[1]])$node_type, jump = jump)
 
-      # Perform inflation/normalization to mitigate degree bias, if specified
-      if(degree.bias) n.adjM = inflate_normalize(nadjM = n.adjM)
+      # Perform bistochastic scaling to mitigate degree bias, if specified
+      if(degree.bias) n.adjM = bistochastic_scaling(trans_mat = n.adjM)
 
       # Create matrix of seed values
       Seeds <- matrix(V(subg[[1]])$seeds, ncol = 1, dimnames = list(V(subg[[1]])$name))
@@ -510,9 +510,10 @@ restart_grid_search <- function(ig, n.adj.M, seeds, filtering_rate, heterogeneou
 #' @param g Input graph
 #' @param adjM Adjacency matrix
 #' @param norm Normalization method
-#' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute
+#' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute.
 #' @param node_type Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.
-#' @param jump Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE)
+#' @param jump Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE).
+#' @param k Value between 0 and 1 indicating by how much to penalize for node degree when calculating new adjacency matrix edge weights for the "modified_degree" option.
 #'
 #' @return transition matrix
 #'
@@ -762,118 +763,125 @@ transition_matrix <- function(g, adjM, norm = c("degree", "modified_degree"), he
   }
 }
 
-#' @title Inflation operator on rows then column normalization
+#' @title Scale a transition matrix to be approximately bistochastic.
 #'
-#' @description `inflate_normalize()` applies...
+#' @description This function uses Iterative Proportional Fitting to modify the input left-stochastic matrix such that the row and column sums all equal 1. The diagonal element in each column is then redistributed evenly to the other non-zero elements of that column.
 #'
-#' @param nadjM Normalized adjacency matrix
+#' @details
+#' The purpose of this function is to mitigate degree bias that is present in PPI networks by directly manipulating the transition matrix to be used in RWR.
 #'
-#' @return left stochastic matrix
+#' The stationary distribution of a Markov chain can be viewed as a measure of centrality. These are the values at which each node has total in-flow equal to total out-flow. Any initial distribution will converge to this distribution in the long run.
+#'
+#' For transition matrices obtained by column-normalizing an adjacency matrix, the stationary probabilities are proportional to node degree. If the goal is to minimize the influence that degree has on propagation scores, while still recognizing that all else being equal a higher-degree node should have more weight than a lower-degree node,
+#' we should aim to squeeze stationary probabilities towards some global mean, since the stationary probability is a good proxy for the amount of influence of degree. The metric that best captures this goal is the entropy of the stationary distribution.
+#'
+#' A bistochastic (doubly stochastic) matrix has a uniform stationary distribution, which represents a stationary distribution with maximum entropy.
+#' There are matrix scaling methods that modify a matrix to conform to the row and column sums of some target matrix, while still being as similar as possible to the original matrix. Here we use Iterative Proportional Fitting (IPF) to arrive at an approximately bistochastic matrix from an input transition matrix.
+#'
+#' To ensure convergence of IPF, it is necessary to add self-loops, i.e., non-zero diagonal elements. Interestingly, these diagonal elements mostly vanish to zero except for very low-degree nodes.
+#' After obtaining an approximately bistochastic matrix, it is desirable to remove the self-loops, since this was only added for convergence considerations and the original matrix had zeros along the diagonal.
+#' To do this, the diagonal elements are evenly redistributed to the non-zero elements of the column, thus upsetting the bistochastic approximation but preserving column sums. However, the resulting left-stochastic matrix is still much closer to being bistochastic than originally, and this is reflected by an increase in the entropy of the associated stationary distribution.
+#'
+#' @param trans_mat A transition matrix
+#'
+#' @return A left stochastic transition matrix
 #'
 #' @examples
-#' # Calculate the entropy (information) of a vector
+#' # Calculate the entropy of a vector
 #' entropy = function(x){
 #'   tmp = ifelse(round(x, 20) == 0, 0, -x * log(x))
 #'   sum(tmp)
 #' }
-#' # Calculate the stationary distribution of the transition matrix of an irriducible markov chain
+#' # Calculate the stationary distribution of the transition matrix of an irreducible markov chain
 #' stationary.distr = function(x){
 #'   e = Re(RSpectra::eigs(A = x, k = 1, which = "LM")$vectors[,1])
 #'   e / sum(e)
 #' }
 #' d = igraph::degree(glut4_graph) # node degrees of the graph
 #' # normalizing adjacency matrix to get transition matrix
-#' adj_norm = AMEND:::transition_matrix(glut4_graph, glut4_adjM, norm = "degree")
+#' adj_norm = AMEND::transition_matrix(glut4_graph, glut4_adjM, norm = "degree")
 #' p1 = stationary.distr(adj_norm)
 #' e1 = entropy(p1)
-#' # Perform inflation-normalization
-#' # This maximize entropy of stationary distribution of transition matrix
-#' adj_norm = AMEND:::inflate_normalize(nadjM = adj_norm)
+#' # Perform bistochastic scaling
+#' # This aims to maximize entropy of stationary distribution of transition matrix
+#' adj_norm = AMEND::bistochastic_scaling(trans_mat = adj_norm)
 #' p2 = stationary.distr(adj_norm)
 #' e2 = entropy(p2)
 #'
 #' # Compare before and after
 #' e1 < e2
-#' plot(d, p1, xlab = "Degree", ylab = "Stationary Distribution", main = "Before", ylim = c(0, 0.01))
+#' plot(d, p1, xlab = "Degree", ylab = "Stationary Distribution",
+#'      main = paste0("Before (entropy=", round(e1, 3),")"), ylim = c(0, 0.01))
 #' abline(a = 0, b = 1 / sum(d), xpd = FALSE)
-#' plot(d, p2, xlab = "Degree", ylab = "Stationary Distribution", main = "After", ylim = c(0, 0.01))
+#' plot(d, p2, xlab = "Degree", ylab = "Stationary Distribution",
+#'      main = paste0("After (entropy=", round(e2, 3),")"), ylim = c(0, 0.01))
 #' abline(a = 0, b = 1 / sum(d), xpd = FALSE)
 #'
-inflate_normalize <- function (nadjM){
-  entropy = function(x){
-    tmp = ifelse(round(x, 20) == 0, 0, -x * log(x))
-    sum(tmp)
-  }
-  sum2one = function(X) {
-    if(!"dgCMatrix" %in% class(X)){
-      X = Matrix::Matrix(X, sparse = TRUE)
-      # if("numeric" %in% class(X)){
-      #   X = Matrix::Matrix(X, sparse = TRUE)
-      # }else if("matrix" %in% class(X)){
-      #   X = methods::as(X, "dgCMatrix")
-      # }else X = methods::as(as.matrix(X), "dgCMatrix")
+#' @export
+bistochastic_scaling = function(trans_mat){
+  get_diagonal = function(X){
+    if(!"dgCMatrix" %in% class(X)) X = Matrix::Matrix(X, sparse = TRUE)
+    d = numeric(ncol(X))
+    for(i in 1:ncol(X)){
+      id.tmp = (X@p[i] + 1):X@p[i+1] # ids of X@x that are non-zero and in col i
+      row.ids = X@i[id.tmp] + 1 # row ids of non-zero elements in col i
+      if(i %in% row.ids){ # if diagonal is non-zero
+        d[i] = X@x[id.tmp[row.ids == i]]
+      }else next
     }
-    inv_col_sum = Matrix::Diagonal(x = abs(Matrix::colSums(X))^(-1))
-    res = X %*% inv_col_sum
-    res[is.na(res)] = 0
-    res
+    d
   }
-  stationary.distr = function(x){
-    e = Re(RSpectra::eigs(A = x, k = 1, which = "LM")$vectors[,1])
-    e / sum(e)
-  }
+  # Iterative Proportional Fitting
+  ipf = function(X, e = 1e-6){
+    # For starting transition matrix X, obtain B = PXQ, where B is bistochastic, P,Q are diagonal matrices, and B and X are as similar as possible (minimize relative entropy between B & X)
+    # Adding self-loops to aid in convergence
+    d = get_diagonal(X)
+    d[d == 0] = e
+    X = X + Matrix::Diagonal(n = nrow(X), x = d)
 
-  # Changing to a Row-compressed sparse matrix
-  nadjM = methods::as(as.matrix(nadjM), "dgRMatrix")
-  # Getting stationary distribution of nadjM
-  stat.distr1 = stationary.distr(nadjM)
-  e0 = entropy(stat.distr1)
-  # Performing Inflation/normalization on transition matrix
-  kf = c(1, 10, seq(50, 2000, 50))
-  res = numeric(length(kf))
-  for(j in seq_along(kf)){
-    inflation = 1 + kf[j] * stat.distr1
-    nadjM.tmp = nadjM
-    tmp = numeric(Matrix::nnzero(nadjM.tmp))
-    for(i in seq_along(inflation)){ # i corresponds to rows of nadjM
-      id.tmp = (nadjM.tmp@p[i] + 1):nadjM.tmp@p[i+1] # ids of nadjM.tmp@x that are non-zero and in row i
-      n.tmp = nadjM.tmp@p[i+1] - nadjM.tmp@p[i] # number of non-zero elements in row i
-      tmp[id.tmp] = rep(inflation[i], n.tmp)
+    stop_delta = 1e-6
+    step = 1
+    stop_step = 200
+    q1 = rep(1, nrow(X)) # initialize the diagonal elements of Q
+    p1 = rep(1, nrow(X)) # initialize the diagonal elements of P
+    repeat{ # To generalize to any row/col sums, change 1 to variables
+      # set p, given q (p are the diagonal elements of P)
+      p2 = 1 / Matrix::rowSums(X %*% Matrix::Diagonal(x = q1))
+      # set q, given p found above (q are the diagonal elements of Q)
+      q2 = 1 / Matrix::colSums(Matrix::Diagonal(x = p2) %*% X)
+
+      delta.p = all(abs(p2 - p1) <= stop_delta)
+      delta.q = all(abs(q2 - q1) <= stop_delta)
+      step = step + 1
+      if((delta.p && delta.q) || step > stop_step) break
+      q1 = q2
+      p1 = p2
     }
-    nadjM.tmp@x = nadjM.tmp@x ^ tmp; rm(tmp)
-    nadjM.tmp = sum2one(nadjM.tmp)
-    sd.tmp = stationary.distr(nadjM.tmp)
-    if(any(sd.tmp < 0 | sd.tmp > 1)){
-      if(j == 1){
-        nadjM = methods::as(as.matrix(nadjM), "dgCMatrix")
-        return(nadjM)
-      }else{
-        j = j-1
-        break
-      }
-    }
-    res[j] = entropy(sd.tmp)
-    if(j == 1){
-      if(res[j] < e0){
-        nadjM = methods::as(as.matrix(nadjM), "dgCMatrix")
-        return(nadjM)
-      }
-    }else if(res[j] < res[j-1]){
-      break
-    }
+    P = Matrix::Diagonal(x = p2)
+    Q = Matrix::Diagonal(x = q2)
+    B = P %*% X %*% Q
+    return(list(B = B, p = p2, q = q2))
   }
-  res = res[1:j]
-  j = which.max(res)
-  inflation = 1 + kf[j] * stat.distr1
-  tmp = numeric(Matrix::nnzero(nadjM))
-  for(i in seq_along(inflation)){ # i corresponds to rows of nadjM
-    id.tmp = (nadjM@p[i] + 1):nadjM@p[i+1] # ids of nadjM.tmp@x that are non-zero and in row i
-    n.tmp = nadjM@p[i+1] - nadjM@p[i] # number of non-zero elements in row i
-    tmp[id.tmp] = rep(inflation[i], n.tmp)
+  x = 1e-6
+  if(!"dgCMatrix" %in% class(trans_mat)) trans_mat = Matrix::Matrix(trans_mat, sparse = TRUE)
+  B.tmp = ipf(trans_mat, x)
+  B = B.tmp$B
+  b = get_diagonal(B)
+  tmp.res = numeric(Matrix::nnzero(B))
+  for(i in 1:ncol(B)){
+    if(b[i] == 0) next
+    id.tmp = (B@p[i] + 1):B@p[i+1] # ids of B@x that are non-zero and in col i
+    row.ids = B@i[id.tmp] + 1 # row ids of non-zero elements in col i
+    diag.id = id.tmp[row.ids == i]
+    off.id = id.tmp[row.ids != i]
+    # Evenly distribute to neighbors of node i. Preserves column sums
+    degr = B@p[i+1] - B@p[i] - 1 # number of non-zero elements in col i i.e., degree of node i. Minus 1 b/c of self-loops
+    tmp = b[i] / degr
+    tmp.res[diag.id] = 0
+    tmp.res[off.id] = B@x[off.id] + tmp
   }
-  nadjM@x = nadjM@x ^ tmp
-  nadjM = sum2one(nadjM)
-  nadjM
+  B@x = tmp.res
+  return(B)
 }
 
 #' @title Random walk with restart (RWR) procedure

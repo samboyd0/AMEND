@@ -7,10 +7,11 @@
 transition_matrix(
   g,
   adjM,
-  norm = c("degree", "core"),
+  norm = c("degree", "modified_degree"),
   heterogeneous = FALSE,
   node_type = NULL,
-  jump = 0.5
+  jump = 0.5,
+  k = 0.5
 )
 }
 \arguments{
@@ -20,11 +21,13 @@ transition_matrix(
 
 \item{norm}{Normalization method}
 
-\item{heterogeneous}{Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute}
+\item{heterogeneous}{Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute.}
 
 \item{node_type}{Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.}
 
-\item{jump}{Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE)}
+\item{jump}{Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE).}
+
+\item{k}{Value between 0 and 1 indicating by how much to penalize for node degree when calculating new adjacency matrix edge weights for the "modified_degree" option.}
 }
 \value{
 transition matrix
@@ -58,4 +61,3 @@ g = graph_from_adjacency_matrix(adjm, mode = 'undirected')
 adj_norm = AMEND:::transition_matrix(g, adjm, norm = "degree")
 
 }
-\keyword{internal}

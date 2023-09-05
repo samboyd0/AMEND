@@ -55,7 +55,7 @@ run_AMEND(
 
 \item{verbose}{Logical. Whether to output current iteration number to show progress}
 
-\item{degree.bias}{Logical. Whether to mitigate degree bias through inflation-normalization of transition matrix prior to RWR. Experimental. See Details}
+\item{degree.bias}{Logical. Whether to mitigate degree bias through bistochastic scaling of transition matrix prior to RWR. See Details}
 
 \item{identifier}{For use when performing many runs of AMEND to keep track of progress}
 }
@@ -82,7 +82,7 @@ This function can also accommodate heterogeneous networks with two node types. T
 
 Since RWR requires seed values between 0 and 1, node scores often need to be transformed. 'seed.scheme' is used when data.type=ECI. 'zero_bottom' gives ECI values of zero the lowest weight, regardless of DOI. 'zero_middle' linearly transforms ECI values s.t. values in DOI are largest, values \emph{not} in DOI are smallest, and ECIs of zero are in the middle.
 
-The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by applying a row-inflation then column-normalization operation on the transition matrix (assumed to be a left stochastic matrix).
+The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by scaling the transition matrix to be approximately bistochastic.
 
 See \url{link/to/paper} for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
 }
