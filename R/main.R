@@ -534,33 +534,42 @@ restart_grid_search <- function(ig, n.adj.M, seeds, filtering_rate, heterogeneou
 #'
 #' adj_norm = AMEND:::transition_matrix(g, adjm, norm = "degree")
 #'
-#' @keywords internal
-transition_matrix <- function(g, adjM, norm = c("degree", "core"), heterogeneous = FALSE, node_type = NULL, jump = 0.5){
+#' @export
+transition_matrix <- function(g, adjM, norm = c("degree", "modified_degree"), heterogeneous = FALSE, node_type = NULL, jump = 0.5, k = 0.5){
+
+  #=== To-Do: Generalize heterogeneous code to an arbitrary number of different node types.
+
   sum2one <- function(X) {
-    if(!"dgCMatrix" %in% class(X)){
-      X = Matrix::Matrix(X, sparse = TRUE)
-      # if("numeric" %in% class(X)){
-      #   # X = methods::as(matrix(X, ncol = 1), "dgCMatrix")
-      #   X = Matrix::Matrix(X, sparse = TRUE)
-      # }else if("matrix" %in% class(X)){
-      #   X = methods::as(X, "dgCMatrix")
-      # }else X = methods::as(as.matrix(X), "dgCMatrix")
-    }
+    if(!"dgCMatrix" %in% class(X)) X = Matrix::Matrix(X, sparse = TRUE)
     inv_col_sum = Matrix::Diagonal(x = abs(Matrix::colSums(X))^(-1))
     res = X %*% inv_col_sum
     res[is.na(res)] = 0
     res
   }
+  entropy = function(x){
+    tmp = ifelse(round(x, 10) == 0, 0, -x * log(x))
+    sum(tmp)
+  }
+  stationary.distr = function(x){
+    e = Re(RSpectra::eigs(A = x, k = 1, which = "LM")$vectors[,1])
+    tmp = e / sum(e)
+    ifelse(tmp < 0, 0, tmp)
+  }
+  modify_adj_mat = function(adjM, k){
+    # For symmetric matrices, inv.col.sum = inv.row.sum
+    inv.col.sum <- Matrix::Diagonal(x = Matrix::colSums(adjM)^(-k))
+    inv.row.sum <- Matrix::Diagonal(x = Matrix::rowSums(adjM)^(-k))
+    adjM.mod <- inv.row.sum %*% adjM %*% inv.col.sum
+    return(adjM.mod)
+  }
 
   # Coerce to a general, column-compressed sparse matrix from Matrix package
-  if(!"dgCMatrix" %in% class(adjM)){
-    adjM = methods::as(adjM, "dgCMatrix")
-  }
+  if(!"dgCMatrix" %in% class(adjM)) adjM = Matrix::Matrix(adjM, sparse = TRUE) # methods::as(adjM, "dgCMatrix")
 
   if(!heterogeneous){
     norm <- match.arg(norm)
 
-    if(norm == "core"){
+    if(0){ # norm == "core"
       adj.dense = as.matrix(adjM)
       core <- sna::kcores(adj.dense, mode = "graph", ignore.eval = T)
       nadjM = matrix(0, nrow = nrow(adjM), ncol = nrow(adjM))
@@ -573,6 +582,30 @@ transition_matrix <- function(g, adjM, norm = c("degree", "core"), heterogeneous
     }else if(norm == "degree"){
       wt <- Matrix::Diagonal(x = Matrix::colSums(adjM)^(-1))
       nadjM <- adjM %*% wt
+    }else if(norm == "modified_degree"){
+      if(is.null(k)){
+        node.strength = Matrix::colSums(adjM)
+        k.grid = seq(0.5, 0.8, 0.05)
+        ent = numeric(length(k.grid))
+        for(i in seq_along(k.grid)){
+          wt <- Matrix::Diagonal(x = Matrix::colSums(adjM)^(-k.grid[i]))
+          adjM.mod <- wt %*% adjM %*% wt
+          wt.mod <- Matrix::Diagonal(x = Matrix::colSums(adjM.mod)^(-1))
+          nadjM <- adjM.mod %*% wt.mod
+          sdist = stationary.distr(nadjM)
+          ent[i] = entropy(sdist)
+        }
+        k.best = k.grid[which.max(ent)]
+        wt <- Matrix::Diagonal(x = Matrix::colSums(adjM)^(-k.best))
+        adjM.mod <- wt %*% adjM %*% wt
+        wt.mod <- Matrix::Diagonal(x = Matrix::colSums(adjM.mod)^(-1))
+        nadjM <- adjM.mod %*% wt.mod
+      }else{
+        wt <- Matrix::Diagonal(x = Matrix::colSums(adjM)^(-k))
+        adjM.mod <- wt %*% adjM %*% wt
+        wt.mod <- Matrix::Diagonal(x = Matrix::colSums(adjM.mod)^(-1))
+        nadjM <- adjM.mod %*% wt.mod
+      }
     }else{
       nadjM <- adjM
     }
@@ -614,7 +647,19 @@ transition_matrix <- function(g, adjM, norm = c("degree", "core"), heterogeneous
     bp.1 = bp[node_type == nt[1]]
     bp.2 = bp[node_type == nt[2]]
 
-    if(norm == "core"){
+    # Modifying the adjacency matrices
+    if(norm == "modified_degree"){
+      if(is.null(k)) k = 0.5
+
+      adj.1 = modify_adj_mat(adjM = adj.1, k = k)
+      adj.2 = modify_adj_mat(adjM = adj.2, k = k)
+      adj.12 = modify_adj_mat(adjM = adj.12, k = k)
+      adj.21 = modify_adj_mat(adjM = adj.21, k = k)
+
+      norm = "degree"
+    }
+
+    if(0){ # norm == "core"
       # core <- igraph::coreness(g)
       adj.dense = as.matrix(adjM)
       core <- sna::kcores(adj.dense, mode = "graph", ignore.eval = T)
@@ -1094,7 +1139,7 @@ heinz <- function (g, scores){
           score.neg.nodes <- c(score.neg.nodes, V(sub.mig)[i]$score)
         }
       }
-      neg.node.ids.2 <- neg.node.ids[score.neg.nodes > 0]
+      neg.node.ids.2 <- neg.node.ids[score.neg.nodes > 0] # > or >= ?
     }
     if(length(neg.node.ids.2) == 0){
       tmp <- unlist(strsplit(names(node.score.cluster)[which.max(node.score.cluster)], "cluster"))
