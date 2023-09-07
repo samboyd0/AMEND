@@ -921,6 +921,7 @@ bistochastic_scaling = function(trans_mat){
 #'
 #' rwr = AMEND:::RWR(nadjM = adj_norm, setSeeds = seeds, restart = 0.8)
 #'
+#' @export
 RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, node_type = NULL, net1.weight = 0.5){
   # NB: Assuming node_type in same order as setSeeds, while order of setSeeds doesn't need to equal order of rows/columns in nadjM
   # The ordering will conform to nadjM
@@ -1028,6 +1029,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
 #'
 #' new_g = AMEND:::heinz(g = graph, scores = g_scores)
 #'
+#' @export
 heinz <- function (g, scores){
   ig <- g
   if(class(ig) != "igraph"){
