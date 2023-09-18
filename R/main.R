@@ -449,8 +449,8 @@ data_preprocessing = function(graph, data.type = c("ECI", "logFC", "p_val", "bin
 #'
 restart_grid_search <- function(ig, n.adj.M, seeds, filtering_rate, heterogeneous = FALSE, node_type = NULL, net1.weight = 0.5, iteration = 1){
   if(iteration == 1){
-    grid <- seq(0.75, 0.95, by = 0.05)
-  }else grid <- seq(0.5, 0.95, by = 0.05)
+    grid <- seq(0.5, 0.95, by = 0.05)
+  }else grid <- seq(0.2, 0.95, by = 0.05)
 
   score_metrics <- matrix(nrow = length(grid), ncol = 4)
   nets <- vector(mode = "list", length = length(grid))
