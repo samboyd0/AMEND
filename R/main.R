@@ -13,11 +13,13 @@
 #'
 #' This function can also accommodate heterogeneous networks with two node types. This information is incorporated in RWR for heterogeneous graphs (RWRH) proposed by [Li et al.](https://doi.org/10.1093/bioinformatics/btq108). This introduces the 'jump' and 'net1.weight' parameters.
 #'
+#' The seed values used for RWR are calculated as follows. For data.type "ECI", the seeding scheme involves taking the absolute value of the ECIs then weighting those nodes NOT in the Direction of Interest (DOI) by 'seed.weight'. For data.type "logFC", the log fold changes are multiplied by -1 if the DOI is negative, 1 if the DOI is positive, and the absolute value is taken if the DOI is both. Then the values are exponentiated. For data.type "p_val", the p-values are transformed by -log10(p-value). For data.type "binary", weight is assigned uniformly to "active" nodes, i.e., nodes with a value of 1 in the binary vector. For data.type "other", no transformation is performed.
+#'
 #' Since RWR requires seed values between 0 and 1, node scores often need to be transformed. 'seed.scheme' is used when data.type=ECI. 'zero_bottom' gives ECI values of zero the lowest weight, regardless of DOI. 'zero_middle' linearly transforms ECI values s.t. values in DOI are largest, values _not_ in DOI are smallest, and ECIs of zero are in the middle.
 #'
 #' The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by scaling the transition matrix to be approximately bistochastic.
 #'
-#' See \url{link/to/paper} for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
+#' See the [manuscript](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10324253/) for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
 #'
 #' @param graph igraph object with experimental data as vertex attribute. Either graph or adj_matrix and node_scores must be specified
 #' @param adj_matrix Adjacency matrix of network. Either graph or adj_matrix and node_scores must be specified. Must have either colnames or rownames
@@ -28,6 +30,7 @@
 #' @param DOI Direction of Interest for experimental values. One of negative, positive, or both. When "both" is specified, the absolute value is taken. Only relevant for data type ECI and logFC
 #' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute
 #' @param normalize Normalization scheme of adjacency matrix for random walk with restart
+#' @param k Value between 0 and 1. When normalize = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees, which is raised to the power -k. As k increases, edge weights are penalized more for the degrees of their adjacent nodes.
 #' @param eta Starting filtering rate. If NULL (default), a value is chosen based on the input network size and parameter 'n'
 #' @param seed.weight Relative weight to give to nodes not in the DOI in random walk with restart, between 0 and 1
 #' @param seed.scheme Determines how the feature-wise experimental values are transformed for use as seed values in RWR. See Details.
@@ -67,7 +70,7 @@
 #' @export
 run_AMEND <- function(graph = NULL, adj_matrix = NULL, node_scores = NULL, node_type = NULL, n = 25,
                       data.type = c("ECI", "logFC", "p_val", "binary", "other"), DOI = c("positive", "negative", "both"), heterogeneous = FALSE,
-                      normalize = c("degree", "core"), eta = NULL,
+                      normalize = c("degree", "modified_degree"), k = 0.5, eta = NULL,
                       seed.weight = 0.5, seed.scheme = c("zero_bottom", "zero_middle"), jump = 0.5, net1.weight = 0.5,
                       verbose = TRUE, degree.bias = FALSE, identifier = 1){
   start_time = Sys.time()
@@ -241,7 +244,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, node_scores = NULL, node_
         }
       }
       # Normalize adjacency matrix to get transition matrix
-      n.adjM <- transition_matrix(g = subg[[1]], adjM = adj, norm = normalize, heterogeneous = heterogeneous, node_type = V(subg[[1]])$node_type, jump = jump)
+      n.adjM <- transition_matrix(g = subg[[1]], adjM = adj, norm = normalize, heterogeneous = heterogeneous, node_type = V(subg[[1]])$node_type, jump = jump, k = k)
 
       # Perform bistochastic scaling to mitigate degree bias, if specified
       if(degree.bias) n.adjM = bistochastic_scaling(trans_mat = n.adjM)
@@ -504,8 +507,8 @@ restart_grid_search <- function(ig, n.adj.M, seeds, filtering_rate, heterogeneou
 #' @description `transition_matrix()` creates a transition matrix from the adjacency matrix of a graph for input into random walk with restart (RWR).
 #'
 #' @details There are two normalization schemes available.
-#' * degree: divides each column of the adjacency matrix by the column total
-#' * core: uses the concept of node coreness. Details can be found in \url{https://academic.oup.com/nar/article/48/17/e98/5879427}
+#' * degree: Divides each column of the adjacency matrix by the column total
+#' * modified_degree: First creates a modified adjacency matrix by left and right multiplying the adjacency matrix by a diagonal matrix raised to the power of -k, whose diagonal elements are the column sums of the original adjacency matrix. Then proceed to column-normalize this modified adjacency matrix.
 #'
 #' @param g Input graph
 #' @param adjM Adjacency matrix
@@ -513,12 +516,11 @@ restart_grid_search <- function(ig, n.adj.M, seeds, filtering_rate, heterogeneou
 #' @param heterogeneous Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute.
 #' @param node_type Named vector of node types. Only considered if heterogeneous=TRUE. Can only accommodate two unique node types.
 #' @param jump Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE).
-#' @param k Value between 0 and 1 indicating by how much to penalize for node degree when calculating new adjacency matrix edge weights for the "modified_degree" option.
+#' @param k Value between 0 and 1. When norm = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees, which is raised to the power -k. As k increases, edge weights are penalized more for the degrees of their adjacent nodes.
 #'
 #' @return transition matrix
 #'
 #' @examples
-#'
 #'
 #' library(igraph)
 #'
@@ -602,8 +604,7 @@ transition_matrix <- function(g, adjM, norm = c("degree", "modified_degree"), he
         wt.mod <- Matrix::Diagonal(x = Matrix::colSums(adjM.mod)^(-1))
         nadjM <- adjM.mod %*% wt.mod
       }else{
-        wt <- Matrix::Diagonal(x = Matrix::colSums(adjM)^(-k))
-        adjM.mod <- wt %*% adjM %*% wt
+        adjM.mod = modify_adj_mat(adjM = adjM, k = k)
         wt.mod <- Matrix::Diagonal(x = Matrix::colSums(adjM.mod)^(-1))
         nadjM <- adjM.mod %*% wt.mod
       }
@@ -773,7 +774,7 @@ transition_matrix <- function(g, adjM, norm = c("degree", "modified_degree"), he
 #' The stationary distribution of a Markov chain can be viewed as a measure of centrality. These are the values at which each node has total in-flow equal to total out-flow. Any initial distribution will converge to this distribution in the long run.
 #'
 #' For transition matrices obtained by column-normalizing an adjacency matrix, the stationary probabilities are proportional to node degree. If the goal is to minimize the influence that degree has on propagation scores, while still recognizing that all else being equal a higher-degree node should have more weight than a lower-degree node,
-#' we should aim to squeeze stationary probabilities towards some global mean, since the stationary probability is a good proxy for the amount of influence of degree. The metric that best captures this goal is the entropy of the stationary distribution.
+#' we should aim to squeeze stationary probabilities towards some global mean, since the stationary probability is a good proxy for the amount of influence degree has on propagation scores. The metric that best captures this goal is the entropy of the stationary distribution.
 #'
 #' A bistochastic (doubly stochastic) matrix has a uniform stationary distribution, which represents a stationary distribution with maximum entropy.
 #' There are matrix scaling methods that modify a matrix to conform to the row and column sums of some target matrix, while still being as similar as possible to the original matrix. Here we use Iterative Proportional Fitting (IPF) to arrive at an approximately bistochastic matrix from an input transition matrix.
@@ -1011,7 +1012,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
 #'
 #' @description Given a graph and a named vector of node scores, `heinz()` heuristically finds a solution to the maximum-weight connected subgraph problem.
 #'
-#' @details Details can be found in the _dnet_ package documentation \url{https://cran.r-project.org/web/packages/dnet/dnet.pdf}
+#' @details Details can be found in the _dnet_ package documentation under the `dnetfind()` function: \url{https://cran.r-project.org/web/packages/dnet/dnet.pdf}
 #'
 #' @note Adapted from the _dnet_ package. Based on method from the _BioNet_ package
 #' @param g Input graph
