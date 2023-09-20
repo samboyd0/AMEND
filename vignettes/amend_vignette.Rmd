@@ -58,9 +58,8 @@ The dataset that will be used here is a GLUT4 knockout-overexpression (KO-OX) mi
 gse1 <- GEOquery::getGEO("GSE35378", GSEMatrix = TRUE)
 #> Found 1 file(s)
 #> GSE35378_series_matrix.txt.gz
-#> Using locally cached version: /var/folders/fy/htp6vm7s2y92hk7hh6110p840000gn/T//RtmpQQ3P9H/GSE35378_series_matrix.txt.gz
 #> 
-#> ── Column specification ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+#> ── Column specification ───────────────────────────────────────────────────────────────────────────────────────────
 #> cols(
 #>   ID_REF = col_character(),
 #>   GSM867144 = col_double(),
@@ -76,8 +75,8 @@ gse1 <- GEOquery::getGEO("GSE35378", GSEMatrix = TRUE)
 #>   GSM867154 = col_double(),
 #>   GSM867155 = col_double()
 #> )
-#> Using locally cached version of GPL81 found here:
-#> /var/folders/fy/htp6vm7s2y92hk7hh6110p840000gn/T//RtmpQQ3P9H/GPL81.soft
+#> File stored at:
+#> /var/folders/fy/htp6vm7s2y92hk7hh6110p840000gn/T//RtmpRtO94h/GPL81.soft
 #> Warning: 66 parsing failures.
 #>   row     col           expected    actual         file
 #> 12423 SPOT_ID 1/0/T/F/TRUE/FALSE --Control literal data
@@ -89,13 +88,20 @@ gse1 <- GEOquery::getGEO("GSE35378", GSEMatrix = TRUE)
 #> See problems(...) for more details.
 data <- Biobase::exprs(gse1[[1]])
 head(data)
-#>           GSM867144 GSM867145 GSM867146 GSM867147 GSM867148 GSM867149 GSM867150 GSM867151 GSM867152 GSM867153 GSM867154 GSM867155
-#> 100001_at     21.92     21.90     31.09     21.90     56.51     26.03    203.10    174.11    153.69    189.57    173.95    223.42
-#> 100002_at     58.21     60.57     55.37     76.22     72.60     53.05     58.23     56.80     54.44     69.12     64.58     53.14
-#> 100003_at     57.94     60.65     98.07     60.62     63.18     66.61     49.78     37.22    204.64     48.51     76.01     43.02
-#> 100004_at    163.94    185.69    202.13    205.00    200.66    207.09    117.30    126.97    144.38    121.94    143.69     72.71
-#> 100005_at     56.10     61.13     56.67     73.43     80.79     80.35    447.95    478.10    388.26    403.07    412.29    405.75
-#> 100006_at    138.01    188.80    178.50    201.65    156.47    149.67    253.80    244.09    284.08    349.76    292.77    278.73
+#>           GSM867144 GSM867145 GSM867146 GSM867147 GSM867148 GSM867149 GSM867150 GSM867151 GSM867152 GSM867153
+#> 100001_at     21.92     21.90     31.09     21.90     56.51     26.03    203.10    174.11    153.69    189.57
+#> 100002_at     58.21     60.57     55.37     76.22     72.60     53.05     58.23     56.80     54.44     69.12
+#> 100003_at     57.94     60.65     98.07     60.62     63.18     66.61     49.78     37.22    204.64     48.51
+#> 100004_at    163.94    185.69    202.13    205.00    200.66    207.09    117.30    126.97    144.38    121.94
+#> 100005_at     56.10     61.13     56.67     73.43     80.79     80.35    447.95    478.10    388.26    403.07
+#> 100006_at    138.01    188.80    178.50    201.65    156.47    149.67    253.80    244.09    284.08    349.76
+#>           GSM867154 GSM867155
+#> 100001_at    173.95    223.42
+#> 100002_at     64.58     53.14
+#> 100003_at     76.01     43.02
+#> 100004_at    143.69     72.71
+#> 100005_at    412.29    405.75
+#> 100006_at    292.77    278.73
 ```
 
 ## Equivalent Change Index
@@ -220,6 +226,7 @@ mapping <- biomaRt::getBM(attributes=c("mgi_symbol", "ensembl_peptide_id"),
                           filters = "mgi_symbol",
                           values = gene_symbols,
                           mart = ensembl)
+#> Batch submitting query [================================>---------------------------------] 50% eta: 18s
 mapping <- mapping %>% dplyr::filter(ensembl_peptide_id != "")
 
 # Function for removing the duplicate edges from String PPI network 
@@ -285,17 +292,17 @@ if(!igraph::is_connected(glut4_graph)){
 igraph::V(glut4_graph)$ECI = dat$ECI[match(igraph::V(glut4_graph)$symbol, row.names(dat))]
 igraph::V(glut4_graph)$logFC = datFC$logFC[match(igraph::V(glut4_graph)$symbol, row.names(datFC))]
 glut4_graph
-#> IGRAPH 5761fff UNW- 6422 120546 -- 
+#> IGRAPH 64185ed UNW- 6422 120546 -- 
 #> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), weight (e/n)
-#> + edges from 5761fff (vertex names):
-#>  [1] ENSMUSP00000000001--ENSMUSP00000017460 ENSMUSP00000000001--ENSMUSP00000039107 ENSMUSP00000000001--ENSMUSP00000052894 ENSMUSP00000000001--ENSMUSP00000025842
-#>  [5] ENSMUSP00000000001--ENSMUSP00000045335 ENSMUSP00000000001--ENSMUSP00000093978 ENSMUSP00000000001--ENSMUSP00000040847 ENSMUSP00000000001--ENSMUSP00000066822
-#>  [9] ENSMUSP00000000001--ENSMUSP00000076155 ENSMUSP00000000001--ENSMUSP00000052444 ENSMUSP00000000001--ENSMUSP00000052581 ENSMUSP00000000001--ENSMUSP00000053489
-#> [13] ENSMUSP00000000001--ENSMUSP00000028883 ENSMUSP00000000001--ENSMUSP00000045911 ENSMUSP00000000001--ENSMUSP00000137518 ENSMUSP00000000001--ENSMUSP00000047586
-#> [17] ENSMUSP00000000001--ENSMUSP00000068731 ENSMUSP00000000001--ENSMUSP00000024004 ENSMUSP00000000001--ENSMUSP00000005406 ENSMUSP00000000001--ENSMUSP00000065799
-#> [21] ENSMUSP00000000001--ENSMUSP00000031146 ENSMUSP00000000001--ENSMUSP00000074885 ENSMUSP00000000001--ENSMUSP00000038884 ENSMUSP00000000001--ENSMUSP00000065000
-#> [25] ENSMUSP00000000001--ENSMUSP00000053638 ENSMUSP00000000001--ENSMUSP00000019074 ENSMUSP00000000001--ENSMUSP00000093311 ENSMUSP00000000001--ENSMUSP00000063136
-#> [29] ENSMUSP00000000001--ENSMUSP00000127024 ENSMUSP00000000001--ENSMUSP00000047646 ENSMUSP00000000001--ENSMUSP00000063986 ENSMUSP00000000001--ENSMUSP00000030815
+#> + edges from 64185ed (vertex names):
+#>  [1] ENSMUSP00000000001--ENSMUSP00000017460 ENSMUSP00000000001--ENSMUSP00000039107
+#>  [3] ENSMUSP00000000001--ENSMUSP00000052894 ENSMUSP00000000001--ENSMUSP00000025842
+#>  [5] ENSMUSP00000000001--ENSMUSP00000045335 ENSMUSP00000000001--ENSMUSP00000093978
+#>  [7] ENSMUSP00000000001--ENSMUSP00000040847 ENSMUSP00000000001--ENSMUSP00000066822
+#>  [9] ENSMUSP00000000001--ENSMUSP00000076155 ENSMUSP00000000001--ENSMUSP00000052444
+#> [11] ENSMUSP00000000001--ENSMUSP00000052581 ENSMUSP00000000001--ENSMUSP00000053489
+#> [13] ENSMUSP00000000001--ENSMUSP00000028883 ENSMUSP00000000001--ENSMUSP00000045911
+#> [15] ENSMUSP00000000001--ENSMUSP00000137518 ENSMUSP00000000001--ENSMUSP00000047586
 #> + ... omitted several edges
 ```
 
@@ -307,13 +314,20 @@ glut4_graph
 glut4_adjM = igraph::as_adjacency_matrix(glut4_graph, attr = "weight", sparse = T)
 glut4_adjM[1:6,1:6]
 #> 6 x 6 sparse Matrix of class "dgCMatrix"
-#>                    ENSMUSP00000000001 ENSMUSP00000017460 ENSMUSP00000039107 ENSMUSP00000052894 ENSMUSP00000025842 ENSMUSP00000045335
-#> ENSMUSP00000000001              .                  0.900              0.917              0.916              0.904              0.916
-#> ENSMUSP00000017460              0.900              .                  0.901              0.901              0.932              0.901
-#> ENSMUSP00000039107              0.917              0.901              .                  0.908              0.905              0.900
-#> ENSMUSP00000052894              0.916              0.901              0.908              .                  0.906              0.901
-#> ENSMUSP00000025842              0.904              0.932              0.905              0.906              .                  0.905
-#> ENSMUSP00000045335              0.916              0.901              0.900              0.901              0.905              .
+#>                    ENSMUSP00000000001 ENSMUSP00000017460 ENSMUSP00000039107 ENSMUSP00000052894 ENSMUSP00000025842
+#> ENSMUSP00000000001              .                  0.900              0.917              0.916              0.904
+#> ENSMUSP00000017460              0.900              .                  0.901              0.901              0.932
+#> ENSMUSP00000039107              0.917              0.901              .                  0.908              0.905
+#> ENSMUSP00000052894              0.916              0.901              0.908              .                  0.906
+#> ENSMUSP00000025842              0.904              0.932              0.905              0.906              .    
+#> ENSMUSP00000045335              0.916              0.901              0.900              0.901              0.905
+#>                    ENSMUSP00000045335
+#> ENSMUSP00000000001              0.916
+#> ENSMUSP00000017460              0.901
+#> ENSMUSP00000039107              0.900
+#> ENSMUSP00000052894              0.901
+#> ENSMUSP00000025842              0.905
+#> ENSMUSP00000045335              .
 
 # Creating named vectors of gene-wise experimental scores
 eci_scores = igraph::V(glut4_graph)$ECI
@@ -369,35 +383,35 @@ Let's inspect the module returned by `run_AMEND()`. A named list is returned con
 ```r
 # The final module
 module$module
-#> IGRAPH cef804d UNW- 41 58 -- 
+#> IGRAPH 57f7530 UNW- 28 50 -- 
 #> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), weight (e/n)
-#> + edges from cef804d (vertex names):
-#>  [1] ENSMUSP00000076155--ENSMUSP00000047586 ENSMUSP00000076155--ENSMUSP00000047646 ENSMUSP00000047586--ENSMUSP00000047646 ENSMUSP00000076155--ENSMUSP00000058040
-#>  [5] ENSMUSP00000047586--ENSMUSP00000058040 ENSMUSP00000047646--ENSMUSP00000058040 ENSMUSP00000033131--ENSMUSP00000021141 ENSMUSP00000021141--ENSMUSP00000139275
-#>  [9] ENSMUSP00000033131--ENSMUSP00000059889 ENSMUSP00000076155--ENSMUSP00000103981 ENSMUSP00000047586--ENSMUSP00000103981 ENSMUSP00000076155--ENSMUSP00000021346
-#> [13] ENSMUSP00000047586--ENSMUSP00000021346 ENSMUSP00000133117--ENSMUSP00000086795 ENSMUSP00000133117--ENSMUSP00000032825 ENSMUSP00000086795--ENSMUSP00000032825
-#> [17] ENSMUSP00000133117--ENSMUSP00000041250 ENSMUSP00000041250--ENSMUSP00000065393 ENSMUSP00000065393--ENSMUSP00000095316 ENSMUSP00000047646--ENSMUSP00000028259
-#> [21] ENSMUSP00000047646--ENSMUSP00000032198 ENSMUSP00000028259--ENSMUSP00000032198 ENSMUSP00000095316--ENSMUSP00000115578 ENSMUSP00000070019--ENSMUSP00000105179
-#> [25] ENSMUSP00000105179--ENSMUSP00000031606 ENSMUSP00000115578--ENSMUSP00000018875 ENSMUSP00000070019--ENSMUSP00000018875 ENSMUSP00000139275--ENSMUSP00000030797
-#> [29] ENSMUSP00000115578--ENSMUSP00000030797 ENSMUSP00000018875--ENSMUSP00000030797 ENSMUSP00000018875--ENSMUSP00000099935 ENSMUSP00000115578--ENSMUSP00000003645
+#> + edges from 57f7530 (vertex names):
+#>  [1] ENSMUSP00000076155--ENSMUSP00000047586 ENSMUSP00000076155--ENSMUSP00000047646
+#>  [3] ENSMUSP00000047586--ENSMUSP00000047646 ENSMUSP00000076155--ENSMUSP00000036159
+#>  [5] ENSMUSP00000047586--ENSMUSP00000036159 ENSMUSP00000047646--ENSMUSP00000036159
+#>  [7] ENSMUSP00000076155--ENSMUSP00000058040 ENSMUSP00000047586--ENSMUSP00000058040
+#>  [9] ENSMUSP00000047646--ENSMUSP00000058040 ENSMUSP00000036159--ENSMUSP00000058040
+#> [11] ENSMUSP00000076155--ENSMUSP00000024988 ENSMUSP00000047586--ENSMUSP00000024988
+#> [13] ENSMUSP00000047646--ENSMUSP00000024988 ENSMUSP00000036159--ENSMUSP00000024988
+#> [15] ENSMUSP00000058040--ENSMUSP00000024988 ENSMUSP00000076155--ENSMUSP00000021346
 #> + ... omitted several edges
 
 # data.frame of network stats for all iterations
 module$stats
 #>   Decay Restart parameter Network score Avg Z Avg CCC Nodes Edges Density Filtering rate Observed filtering rate
-#> 1  0.16              0.75         0.188 0.216   0.868  2269 24893   0.010          0.627                   0.647
-#> 2  0.16              0.95         0.658 0.760   0.865   856  4037   0.011          0.534                   0.623
-#> 3  0.16              0.85         1.151 1.329   0.866   435  1672   0.018          0.455                   0.492
-#> 4  0.17              0.95         1.589 1.874   0.848   227   516   0.020          0.384                   0.478
-#> 5  0.18              0.95         1.982 2.315   0.856   126   250   0.032          0.321                   0.445
-#> 6  0.19              0.95         2.108 2.467   0.855    86   143   0.039          0.265                   0.317
-#> 7  0.21              0.70         2.151 2.504   0.859    66   113   0.053          0.215                   0.233
-#> 8  0.22              0.85         2.158 2.575   0.838    50    80   0.065          0.173                   0.242
-#> 9  0.22              0.85         2.158 2.599   0.830    41    58   0.071          0.138                   0.180
+#> 1  0.16              0.50         0.198 0.226   0.876  2338 40912   0.015          0.627                   0.636
+#> 2  0.16              0.85         0.643 0.742   0.867   931  4946   0.011          0.534                   0.602
+#> 3  0.16              0.85         1.099 1.274   0.863   477  1961   0.017          0.455                   0.488
+#> 4  0.17              0.95         1.576 1.839   0.857   241   599   0.021          0.384                   0.495
+#> 5  0.17              0.95         1.983 2.300   0.862   142   312   0.031          0.324                   0.411
+#> 6  0.18              0.90         2.061 2.403   0.857   105   197   0.036          0.271                   0.261
+#> 7  0.20              0.90         2.124 2.460   0.863    59   117   0.068          0.222                   0.438
+#> 8  0.19              0.85         2.205 2.494   0.884    45    76   0.077          0.183                   0.237
+#> 9  0.27              0.95         2.311 2.520   0.917    28    50   0.132          0.140                   0.378
 
 # Runtime
 module$time
-#> Time difference of 1.937093 mins
+#> Time difference of 3.795469 mins
 ```
 
 ## Running AMEND with log fold change 
@@ -442,17 +456,17 @@ Here are the results.
 ```r
 # The final module
 module2$module
-#> IGRAPH 3d9d5a8 UNW- 42 77 -- 
+#> IGRAPH dfe7fc5 UNW- 42 77 -- 
 #> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), weight (e/n)
-#> + edges from 3d9d5a8 (vertex names):
-#>  [1] ENSMUSP00000053489--ENSMUSP00000024004 ENSMUSP00000053489--ENSMUSP00000065799 ENSMUSP00000024004--ENSMUSP00000065799 ENSMUSP00000053489--ENSMUSP00000074885
-#>  [5] ENSMUSP00000024004--ENSMUSP00000074885 ENSMUSP00000065799--ENSMUSP00000074885 ENSMUSP00000053489--ENSMUSP00000052185 ENSMUSP00000024004--ENSMUSP00000052185
-#>  [9] ENSMUSP00000065799--ENSMUSP00000052185 ENSMUSP00000074885--ENSMUSP00000052185 ENSMUSP00000053489--ENSMUSP00000001008 ENSMUSP00000074885--ENSMUSP00000001008
-#> [13] ENSMUSP00000065799--ENSMUSP00000056774 ENSMUSP00000079380--ENSMUSP00000056774 ENSMUSP00000053489--ENSMUSP00000001780 ENSMUSP00000056774--ENSMUSP00000001780
-#> [17] ENSMUSP00000036044--ENSMUSP00000108367 ENSMUSP00000036044--ENSMUSP00000093101 ENSMUSP00000108367--ENSMUSP00000093101 ENSMUSP00000036044--ENSMUSP00000001927
-#> [21] ENSMUSP00000108367--ENSMUSP00000001927 ENSMUSP00000093101--ENSMUSP00000001927 ENSMUSP00000053489--ENSMUSP00000026845 ENSMUSP00000074885--ENSMUSP00000026845
-#> [25] ENSMUSP00000001008--ENSMUSP00000026845 ENSMUSP00000001780--ENSMUSP00000026845 ENSMUSP00000036044--ENSMUSP00000026845 ENSMUSP00000108367--ENSMUSP00000026845
-#> [29] ENSMUSP00000093101--ENSMUSP00000026845 ENSMUSP00000001927--ENSMUSP00000026845 ENSMUSP00000036044--ENSMUSP00000082130 ENSMUSP00000108367--ENSMUSP00000082130
+#> + edges from dfe7fc5 (vertex names):
+#>  [1] ENSMUSP00000053489--ENSMUSP00000024004 ENSMUSP00000053489--ENSMUSP00000065799
+#>  [3] ENSMUSP00000024004--ENSMUSP00000065799 ENSMUSP00000053489--ENSMUSP00000074885
+#>  [5] ENSMUSP00000024004--ENSMUSP00000074885 ENSMUSP00000065799--ENSMUSP00000074885
+#>  [7] ENSMUSP00000053489--ENSMUSP00000052185 ENSMUSP00000024004--ENSMUSP00000052185
+#>  [9] ENSMUSP00000065799--ENSMUSP00000052185 ENSMUSP00000074885--ENSMUSP00000052185
+#> [11] ENSMUSP00000053489--ENSMUSP00000001008 ENSMUSP00000074885--ENSMUSP00000001008
+#> [13] ENSMUSP00000065799--ENSMUSP00000056774 ENSMUSP00000079380--ENSMUSP00000056774
+#> [15] ENSMUSP00000053489--ENSMUSP00000001780 ENSMUSP00000056774--ENSMUSP00000001780
 #> + ... omitted several edges
 
 # data.frame of network stats for all iterations
@@ -473,7 +487,7 @@ module2$stats
 
 # Runtime
 module2$time
-#> Time difference of 55.23403 secs
+#> Time difference of 1.607469 mins
 ```
 
 Suppose that we want to investigate an intermediate subnetwork that was generated during `run_AMEND()`, either because the final module was too small or because we want to see which genes were filtered out. From the output of `module2$stats`, let's choose the subnetwork from iteration 6. We can retrieve this subnetwork by using the function `get_subnetwork()`. We can also look at the nodes in this subnetwork directly from the `module2` object.
@@ -483,38 +497,44 @@ Suppose that we want to investigate an intermediate subnetwork that was generate
 # Using get_subnetwork()
 subnet6 = get_subnetwork(amend_object = module2, k = 6)
 subnet6
-#> IGRAPH 7dadf56 UNW- 114 296 -- 
+#> IGRAPH e374960 UNW- 114 296 -- 
 #> + attr: name (v/c), symbol (v/c), ECI (v/n), logFC (v/n), seeds (v/n), Z (v/n), weight (e/n)
-#> + edges from 7dadf56 (vertex names):
-#>  [1] ENSMUSP00000053489--ENSMUSP00000047586 ENSMUSP00000053489--ENSMUSP00000024004 ENSMUSP00000047586--ENSMUSP00000024004 ENSMUSP00000053489--ENSMUSP00000065799
-#>  [5] ENSMUSP00000047586--ENSMUSP00000065799 ENSMUSP00000024004--ENSMUSP00000065799 ENSMUSP00000053489--ENSMUSP00000074885 ENSMUSP00000047586--ENSMUSP00000074885
-#>  [9] ENSMUSP00000024004--ENSMUSP00000074885 ENSMUSP00000065799--ENSMUSP00000074885 ENSMUSP00000053489--ENSMUSP00000052185 ENSMUSP00000047586--ENSMUSP00000052185
-#> [13] ENSMUSP00000024004--ENSMUSP00000052185 ENSMUSP00000065799--ENSMUSP00000052185 ENSMUSP00000074885--ENSMUSP00000052185 ENSMUSP00000053489--ENSMUSP00000083656
-#> [17] ENSMUSP00000047586--ENSMUSP00000083656 ENSMUSP00000024004--ENSMUSP00000083656 ENSMUSP00000065799--ENSMUSP00000083656 ENSMUSP00000074885--ENSMUSP00000083656
-#> [21] ENSMUSP00000052185--ENSMUSP00000083656 ENSMUSP00000047586--ENSMUSP00000025912 ENSMUSP00000065799--ENSMUSP00000025912 ENSMUSP00000053489--ENSMUSP00000000193
-#> [25] ENSMUSP00000074885--ENSMUSP00000000193 ENSMUSP00000053489--ENSMUSP00000001008 ENSMUSP00000074885--ENSMUSP00000001008 ENSMUSP00000065799--ENSMUSP00000092393
-#> [29] ENSMUSP00000098786--ENSMUSP00000092393 ENSMUSP00000065799--ENSMUSP00000032520 ENSMUSP00000098786--ENSMUSP00000032520 ENSMUSP00000092393--ENSMUSP00000032520
+#> + edges from e374960 (vertex names):
+#>  [1] ENSMUSP00000053489--ENSMUSP00000047586 ENSMUSP00000053489--ENSMUSP00000024004
+#>  [3] ENSMUSP00000047586--ENSMUSP00000024004 ENSMUSP00000053489--ENSMUSP00000065799
+#>  [5] ENSMUSP00000047586--ENSMUSP00000065799 ENSMUSP00000024004--ENSMUSP00000065799
+#>  [7] ENSMUSP00000053489--ENSMUSP00000074885 ENSMUSP00000047586--ENSMUSP00000074885
+#>  [9] ENSMUSP00000024004--ENSMUSP00000074885 ENSMUSP00000065799--ENSMUSP00000074885
+#> [11] ENSMUSP00000053489--ENSMUSP00000052185 ENSMUSP00000047586--ENSMUSP00000052185
+#> [13] ENSMUSP00000024004--ENSMUSP00000052185 ENSMUSP00000065799--ENSMUSP00000052185
+#> [15] ENSMUSP00000074885--ENSMUSP00000052185 ENSMUSP00000053489--ENSMUSP00000083656
 #> + ... omitted several edges
 
 # Directly from module2
 module2$subnetworks[[6]]
-#>   [1] "ENSMUSP00000053489" "ENSMUSP00000047586" "ENSMUSP00000024004" "ENSMUSP00000065799" "ENSMUSP00000074885" "ENSMUSP00000052185" "ENSMUSP00000083656"
-#>   [8] "ENSMUSP00000025912" "ENSMUSP00000000193" "ENSMUSP00000001008" "ENSMUSP00000079380" "ENSMUSP00000098786" "ENSMUSP00000092393" "ENSMUSP00000032520"
-#>  [15] "ENSMUSP00000064255" "ENSMUSP00000029400" "ENSMUSP00000056774" "ENSMUSP00000033730" "ENSMUSP00000031172" "ENSMUSP00000132166" "ENSMUSP00000049852"
-#>  [22] "ENSMUSP00000001780" "ENSMUSP00000073875" "ENSMUSP00000043376" "ENSMUSP00000036044" "ENSMUSP00000108367" "ENSMUSP00000093101" "ENSMUSP00000001927"
-#>  [29] "ENSMUSP00000026845" "ENSMUSP00000082130" "ENSMUSP00000130979" "ENSMUSP00000030044" "ENSMUSP00000032203" "ENSMUSP00000014578" "ENSMUSP00000020161"
-#>  [36] "ENSMUSP00000099534" "ENSMUSP00000028466" "ENSMUSP00000017610" "ENSMUSP00000090884" "ENSMUSP00000026499" "ENSMUSP00000007253" "ENSMUSP00000017799"
-#>  [43] "ENSMUSP00000097547" "ENSMUSP00000115578" "ENSMUSP00000031280" "ENSMUSP00000102009" "ENSMUSP00000032201" "ENSMUSP00000112765" "ENSMUSP00000000369"
-#>  [50] "ENSMUSP00000104298" "ENSMUSP00000004986" "ENSMUSP00000019362" "ENSMUSP00000126092" "ENSMUSP00000030212" "ENSMUSP00000034602" "ENSMUSP00000079553"
-#>  [57] "ENSMUSP00000075074" "ENSMUSP00000098256" "ENSMUSP00000059270" "ENSMUSP00000027601" "ENSMUSP00000079124" "ENSMUSP00000093462" "ENSMUSP00000106017"
-#>  [64] "ENSMUSP00000134388" "ENSMUSP00000055427" "ENSMUSP00000107247" "ENSMUSP00000117616" "ENSMUSP00000075250" "ENSMUSP00000107214" "ENSMUSP00000088287"
-#>  [71] "ENSMUSP00000056604" "ENSMUSP00000020252" "ENSMUSP00000124719" "ENSMUSP00000034973" "ENSMUSP00000020991" "ENSMUSP00000002663" "ENSMUSP00000025249"
-#>  [78] "ENSMUSP00000001279" "ENSMUSP00000140676" "ENSMUSP00000062096" "ENSMUSP00000029674" "ENSMUSP00000030714" "ENSMUSP00000022592" "ENSMUSP00000023559"
-#>  [85] "ENSMUSP00000079670" "ENSMUSP00000033761" "ENSMUSP00000067325" "ENSMUSP00000044624" "ENSMUSP00000058629" "ENSMUSP00000088453" "ENSMUSP00000007005"
-#>  [92] "ENSMUSP00000088249" "ENSMUSP00000068123" "ENSMUSP00000089298" "ENSMUSP00000110118" "ENSMUSP00000073695" "ENSMUSP00000083908" "ENSMUSP00000092492"
-#>  [99] "ENSMUSP00000034243" "ENSMUSP00000115044" "ENSMUSP00000019117" "ENSMUSP00000034689" "ENSMUSP00000034811" "ENSMUSP00000102636" "ENSMUSP00000097150"
-#> [106] "ENSMUSP00000000924" "ENSMUSP00000027989" "ENSMUSP00000038063" "ENSMUSP00000036971" "ENSMUSP00000132780" "ENSMUSP00000033715" "ENSMUSP00000073541"
-#> [113] "ENSMUSP00000046856" "ENSMUSP00000080531"
+#>   [1] "ENSMUSP00000053489" "ENSMUSP00000047586" "ENSMUSP00000024004" "ENSMUSP00000065799" "ENSMUSP00000074885"
+#>   [6] "ENSMUSP00000052185" "ENSMUSP00000083656" "ENSMUSP00000025912" "ENSMUSP00000000193" "ENSMUSP00000001008"
+#>  [11] "ENSMUSP00000079380" "ENSMUSP00000098786" "ENSMUSP00000092393" "ENSMUSP00000032520" "ENSMUSP00000064255"
+#>  [16] "ENSMUSP00000029400" "ENSMUSP00000056774" "ENSMUSP00000033730" "ENSMUSP00000031172" "ENSMUSP00000132166"
+#>  [21] "ENSMUSP00000049852" "ENSMUSP00000001780" "ENSMUSP00000073875" "ENSMUSP00000043376" "ENSMUSP00000036044"
+#>  [26] "ENSMUSP00000108367" "ENSMUSP00000093101" "ENSMUSP00000001927" "ENSMUSP00000026845" "ENSMUSP00000082130"
+#>  [31] "ENSMUSP00000130979" "ENSMUSP00000030044" "ENSMUSP00000032203" "ENSMUSP00000014578" "ENSMUSP00000020161"
+#>  [36] "ENSMUSP00000099534" "ENSMUSP00000028466" "ENSMUSP00000017610" "ENSMUSP00000090884" "ENSMUSP00000026499"
+#>  [41] "ENSMUSP00000007253" "ENSMUSP00000017799" "ENSMUSP00000097547" "ENSMUSP00000115578" "ENSMUSP00000031280"
+#>  [46] "ENSMUSP00000102009" "ENSMUSP00000032201" "ENSMUSP00000112765" "ENSMUSP00000000369" "ENSMUSP00000104298"
+#>  [51] "ENSMUSP00000004986" "ENSMUSP00000019362" "ENSMUSP00000126092" "ENSMUSP00000030212" "ENSMUSP00000034602"
+#>  [56] "ENSMUSP00000079553" "ENSMUSP00000075074" "ENSMUSP00000098256" "ENSMUSP00000059270" "ENSMUSP00000027601"
+#>  [61] "ENSMUSP00000079124" "ENSMUSP00000093462" "ENSMUSP00000106017" "ENSMUSP00000134388" "ENSMUSP00000055427"
+#>  [66] "ENSMUSP00000107247" "ENSMUSP00000117616" "ENSMUSP00000075250" "ENSMUSP00000107214" "ENSMUSP00000088287"
+#>  [71] "ENSMUSP00000056604" "ENSMUSP00000020252" "ENSMUSP00000124719" "ENSMUSP00000034973" "ENSMUSP00000020991"
+#>  [76] "ENSMUSP00000002663" "ENSMUSP00000025249" "ENSMUSP00000001279" "ENSMUSP00000140676" "ENSMUSP00000062096"
+#>  [81] "ENSMUSP00000029674" "ENSMUSP00000030714" "ENSMUSP00000022592" "ENSMUSP00000023559" "ENSMUSP00000079670"
+#>  [86] "ENSMUSP00000033761" "ENSMUSP00000067325" "ENSMUSP00000044624" "ENSMUSP00000058629" "ENSMUSP00000088453"
+#>  [91] "ENSMUSP00000007005" "ENSMUSP00000088249" "ENSMUSP00000068123" "ENSMUSP00000089298" "ENSMUSP00000110118"
+#>  [96] "ENSMUSP00000073695" "ENSMUSP00000083908" "ENSMUSP00000092492" "ENSMUSP00000034243" "ENSMUSP00000115044"
+#> [101] "ENSMUSP00000019117" "ENSMUSP00000034689" "ENSMUSP00000034811" "ENSMUSP00000102636" "ENSMUSP00000097150"
+#> [106] "ENSMUSP00000000924" "ENSMUSP00000027989" "ENSMUSP00000038063" "ENSMUSP00000036971" "ENSMUSP00000132780"
+#> [111] "ENSMUSP00000033715" "ENSMUSP00000073541" "ENSMUSP00000046856" "ENSMUSP00000080531"
 ```
 
 # Extensions
@@ -523,15 +543,15 @@ module2$subnetworks[[6]]
 
 A network is heterogeneous if it contains more than one node type. This allows for the joint analysis of different omics data types, by creating a heterogeneous network of the features from the different omics experiments (e.g., proteins and metabolites) and then mapping the experimental values from the omics experiments to their respective nodes. RWR has been generalized to heterogeneous networks ([Li et al.](https://doi.org/10.1093/bioinformatics/btq108)). Since AMEND implements RWR, the algorithm can accommodate these heterogeneous networks. Currently, AMEND can only take a network of at most two node types. If the user has a heterogeneous network with omics data that they would like to analyze with AMEND, they must specify `heterogeneous = TRUE`, along with the following arguments: `node_type`, `jump`, and `net1.weight`.
 
-RWR has also been generalized to multiplex networks (multiple edge types) and to multiplex-heterogeneous networks ([Valdeolivas et al.](https://doi.org/10.1093/bioinformatics/bty637)). AMEND cannot yet accommodate multiplex or multiplex-heterogeneous networks, but it is fairly straight-forward to modify the algorithm such that this would be possible.
+RWR has also been generalized to multiplex networks (multiple edge types) and to multiplex-heterogeneous networks ([Valdeolivas et al.](https://doi.org/10.1093/bioinformatics/bty637)). AMEND cannot yet accommodate multiplex or multiplex-heterogeneous networks, but this capability will be available shortly.
 
 ## Mitigating Degree Bias
 
 PPI networks have largely been recognized to suffer from a node degree bias arising from technical and study biases associated with PPI experiments. Many experimental approaches for ascertaining PPIs use a bait and prey paradigm. The degree of a protein in a PPI network (the number of proteins that protein has been shown to interact with) is highly dependent on the number of times it has been used as bait in PPI experiments. The degree also depends on the general research interest that exists for a protein; some proteins are implicated in disease areas that benefit from more active research as compared to others. This causes the degrees of some proteins to be inflated compared to others, which manifests itself in higher propagation scores for those proteins with inflated degree. 
 
-Most active module identification methods do not address degree bias, although several approaches have been developed to deal with the issue. Many are permutation-based involving permuations of the data or random networks. Others adjust propagation scores according to node centrality. Still others attempt to address degree bias in the creation of the transition matrix prior to any network propagation method. Notably, the developers of NetCore [Barel et al.](https://doi.org/10.1093/nar/gkaa639) use node coreness (rather than degree) to create the transition matrix and thus claim to address degree bias, where coreness is a global measure of node connectivity (whereas degree is a local measure). However, upon reflection, this claim may be incorrect. In the core-normalized transition matrix $M=(m_{ij})$, the probability of moving from node $j$ to node $i$ (i.e., $Pr(j\rightarrow i)$) is $m_{ij}=\frac{k_i}{\sum_{l\in S_j}k_l}$, where $k_i$ is the coreness of node $i$ and $S_j$ is the set of neighbors of node $j$. Therefore, the probability of moving to node $i$ depends on its coreness, which is a measure of its connectivity and is highly correlated with its degree. In the context of RWR, a random walker may be _more_ likely to move to a node that is subject to degree bias (i.e., has an inflated degree, and by correlation, an inflated coreness), resulting in a larger propagation score and an exacerbation of the degree bias issue. Therefore, I recommend using `normalize = degree` to create the transition matrix, where $Pr(j\rightarrow i)$ does _not_ depend on the degree of node $i$. 
+Most active module identification methods do not address degree bias, although several approaches have been developed to deal with the issue. Many are permutation-based involving permuations of the data or random networks. Others adjust propagation scores according to node centrality. Still others attempt to address degree bias in the creation of the transition matrix prior to any network propagation method. Notably, the developers of NetCore [Barel et al.](https://doi.org/10.1093/nar/gkaa639) use node coreness (rather than degree) to create the transition matrix and thus claim to address degree bias, where coreness is a global measure of node connectivity (whereas degree is a local measure). However, upon reflection, this claim may be incorrect. In the core-normalized transition matrix $M=(m_{ij})$, the probability of moving from node $j$ to node $i$ (i.e., $Pr(j\rightarrow i)$) is $m_{ij}=\frac{k_i}{\sum_{l\in S_j}k_l}$, where $k_i$ is the coreness of node $i$ and $S_j$ is the set of neighbors of node $j$. Therefore, the probability of moving to node $i$ depends on its coreness, which is a measure of its connectivity and is highly correlated with its degree. In the context of RWR, a random walker may be _more_ likely to move to a node that is subject to degree bias (i.e., has an inflated degree, and by correlation, an inflated coreness), resulting in a larger propagation score and an exacerbation of the degree bias issue. Therefore, AMEND provides the option `normalize = degree` to create the transition matrix, where $Pr(j\rightarrow i)$ does _not_ depend on the degree of node $i$. An alternative is `normalize = modified_degree`, which first creates a modified adjacency matrix that penalizes edge weights in proportion to the product of the degrees of its adjacent nodes and then column-normalizes this modified adjacency matrix.
 
-A procedure currently in development wih the goal of mitigating degree bias is called _inflation-normalization_. This procedure is applied directly to the transition matrix and works by globally attenuating the influence that degree has on propagation scores. Assuming a left stochastic transition matrix, inflation-normalization applies the inflation operator introduced in the Markov Clustering algorithm to the rows of the transition matrix, followed by column normalization. As this is still in development, users are encouraged to use it with caution. More details will be forthcoming as the procedure matures. 
+A procedure currently in development wih the goal of mitigating degree bias is called _bistochastic scaling_, which is applied directly to the transition matrix and globally attenuates the influence that degree has on propagation scores. Assuming a left stochastic transition matrix, this procedure transforms the input transition matrix such that it is approximately bistochastic (doubly stochastic). As this is still in development, users are encouraged to use it with caution. More details will be forthcoming as the procedure matures.
 
 
 
