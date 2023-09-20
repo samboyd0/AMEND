@@ -13,7 +13,8 @@ run_AMEND(
   data.type = c("ECI", "logFC", "p_val", "binary", "other"),
   DOI = c("positive", "negative", "both"),
   heterogeneous = FALSE,
-  normalize = c("degree", "core"),
+  normalize = c("degree", "modified_degree"),
+  k = 0.5,
   eta = NULL,
   seed.weight = 0.5,
   seed.scheme = c("zero_bottom", "zero_middle"),
@@ -42,6 +43,8 @@ run_AMEND(
 \item{heterogeneous}{Logical. If TRUE, network is considered heterogeneous (two distinct node types, e.g., proteins and metabolites). If TRUE, node_type must be included as an argument or graph vertex attribute}
 
 \item{normalize}{Normalization scheme of adjacency matrix for random walk with restart}
+
+\item{k}{Value between 0 and 1. When normalize = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees, which is raised to the power -k. As k increases, edge weights are penalized more for the degrees of their adjacent nodes.}
 
 \item{eta}{Starting filtering rate. If NULL (default), a value is chosen based on the input network size and parameter 'n'}
 
@@ -80,11 +83,13 @@ Briefly, RWR is applied to the network to get propagation scores which are shift
 
 This function can also accommodate heterogeneous networks with two node types. This information is incorporated in RWR for heterogeneous graphs (RWRH) proposed by \href{https://doi.org/10.1093/bioinformatics/btq108}{Li et al.}. This introduces the 'jump' and 'net1.weight' parameters.
 
+The seed values used for RWR are calculated as follows. For data.type "ECI", the seeding scheme involves taking the absolute value of the ECIs then weighting those nodes NOT in the Direction of Interest (DOI) by 'seed.weight'. For data.type "logFC", the log fold changes are multiplied by -1 if the DOI is negative, 1 if the DOI is positive, and the absolute value is taken if the DOI is both. Then the values are exponentiated. For data.type "p_val", the p-values are transformed by -log10(p-value). For data.type "binary", weight is assigned uniformly to "active" nodes, i.e., nodes with a value of 1 in the binary vector. For data.type "other", no transformation is performed.
+
 Since RWR requires seed values between 0 and 1, node scores often need to be transformed. 'seed.scheme' is used when data.type=ECI. 'zero_bottom' gives ECI values of zero the lowest weight, regardless of DOI. 'zero_middle' linearly transforms ECI values s.t. values in DOI are largest, values \emph{not} in DOI are smallest, and ECIs of zero are in the middle.
 
 The 'degree.bias' argument indicates whether degree bias in the network, which arises from technical and study biases, should be mitigated. This is done by scaling the transition matrix to be approximately bistochastic.
 
-See \url{link/to/paper} for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
+See the \href{https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10324253/}{manuscript} for more details on the AMEND algorithm. There have been slight modifications to the algorithm as presented in the original paper.
 }
 \examples{
 # Attach igraph library

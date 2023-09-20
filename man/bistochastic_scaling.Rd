@@ -21,7 +21,7 @@ The purpose of this function is to mitigate degree bias that is present in PPI n
 The stationary distribution of a Markov chain can be viewed as a measure of centrality. These are the values at which each node has total in-flow equal to total out-flow. Any initial distribution will converge to this distribution in the long run.
 
 For transition matrices obtained by column-normalizing an adjacency matrix, the stationary probabilities are proportional to node degree. If the goal is to minimize the influence that degree has on propagation scores, while still recognizing that all else being equal a higher-degree node should have more weight than a lower-degree node,
-we should aim to squeeze stationary probabilities towards some global mean, since the stationary probability is a good proxy for the amount of influence of degree. The metric that best captures this goal is the entropy of the stationary distribution.
+we should aim to squeeze stationary probabilities towards some global mean, since the stationary probability is a good proxy for the amount of influence degree has on propagation scores. The metric that best captures this goal is the entropy of the stationary distribution.
 
 A bistochastic (doubly stochastic) matrix has a uniform stationary distribution, which represents a stationary distribution with maximum entropy.
 There are matrix scaling methods that modify a matrix to conform to the row and column sums of some target matrix, while still being as similar as possible to the original matrix. Here we use Iterative Proportional Fitting (IPF) to arrive at an approximately bistochastic matrix from an input transition matrix.

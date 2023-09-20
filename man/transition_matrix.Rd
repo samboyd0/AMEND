@@ -27,7 +27,7 @@ transition_matrix(
 
 \item{jump}{Probability of a random walker jumping from one network to the other in RWR (when heterogeneous=TRUE).}
 
-\item{k}{Value between 0 and 1 indicating by how much to penalize for node degree when calculating new adjacency matrix edge weights for the "modified_degree" option.}
+\item{k}{Value between 0 and 1. When norm = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees, which is raised to the power -k. As k increases, edge weights are penalized more for the degrees of their adjacent nodes.}
 }
 \value{
 transition matrix
@@ -38,12 +38,11 @@ transition matrix
 \details{
 There are two normalization schemes available.
 \itemize{
-\item degree: divides each column of the adjacency matrix by the column total
-\item core: uses the concept of node coreness. Details can be found in \url{https://academic.oup.com/nar/article/48/17/e98/5879427}
+\item degree: Divides each column of the adjacency matrix by the column total
+\item modified_degree: First creates a modified adjacency matrix by left and right multiplying the adjacency matrix by a diagonal matrix raised to the power of -k, whose diagonal elements are the column sums of the original adjacency matrix. Then proceed to column-normalize this modified adjacency matrix.
 }
 }
 \examples{
-
 
 library(igraph)
 

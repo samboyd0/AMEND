@@ -18,7 +18,7 @@ a subnetwork as an igraph object
 Given a graph and a named vector of node scores, \code{heinz()} heuristically finds a solution to the maximum-weight connected subgraph problem.
 }
 \details{
-Details can be found in the \emph{dnet} package documentation \url{https://cran.r-project.org/web/packages/dnet/dnet.pdf}
+Details can be found in the \emph{dnet} package documentation under the \code{dnetfind()} function: \url{https://cran.r-project.org/web/packages/dnet/dnet.pdf}
 }
 \note{
 Adapted from the \emph{dnet} package. Based on method from the \emph{BioNet} package
