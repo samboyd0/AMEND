@@ -25,6 +25,23 @@ to a protein-protein interaction network, along with their log fold
 changes. This network is the main input into AMEND, from which a single,
 connected module is returned.
 
+To showcase all of the capabilities of AMEND, here is a more complex
+example. Suppose a researcher has RNA-seq data, proteomic data,
+methylation data, and survival data for two groups to be compared. A
+multiplex-heterogeneous network can be created by treating the RNA-seq
+and proteomic data as individual layers in a multiplex component and
+treating the methylation data as a separate component. The CpG sites can
+be mapped to promoter regions of genes, thus creating the bipartite
+connections between the two components. There need not be any CpG-CpG
+interaction information. The different data types can then be mapped to
+the nodes in their respective components/layers. The survival
+information can be incorporated by first creating Cox PH models for each
+omic type, resulting in hazard ratios for each feature. These values can
+be used with the biased random walk capability of the AMEND algorithm,
+thus allowing for the identification of a subnetwork of features whose
+expression is associated with the experimental conditions **AND**
+survival.
+
 ## Installation
 
 You can install AMEND from [GitHub](https://github.com/samboyd0/AMEND)
@@ -43,8 +60,8 @@ accessed with the following code.
 vignette("amend_vignette", package = "AMEND")
 ```
 
-A short tutorial is available in the *vignettes/Tutorials* folder on the
-AMEND GitHub page.
+This vignette is also available in the *vignettes/Tutorials* folder on
+the AMEND GitHub page.
 
 <!-- ## Example -->
 <!-- AMEND contains three objects -->
