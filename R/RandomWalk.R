@@ -15,7 +15,7 @@
 #' @param adjM Adjacency matrix
 #' @param norm Normalization method
 #' @param k Value between 0 and 1. When norm = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees raised to the power -k. As k increases, edge weights are penalized more for the degrees of their adjacent nodes.
-#' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and node_type must be included as an argument or graph vertex attribute.
+#' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites)
 #' @param multiplex Logical. If true, graph is assumed to contain multiplex components.
 #' @param jump.prob A named vector, or NULL. Probability of random walker jumping from one component of graph to another in RWR. Only used when heterogeneous=TRUE.
 #' @param switch.layer.prob A named list of named vectors, or NULL. Probability of random walker to switch from current layer in a multiplex to another layer in same component. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.
@@ -336,7 +336,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
 #' @param nadjM Normalized adjacency matrix
 #' @param setSeeds A named vector of seed values
 #' @param restart Restart parameter
-#' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and node_type must be included as an argument or graph vertex attribute.
+#' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites)
 #' @param multiplex Logical. If true, graph is assumed to contain multiplex components.
 #' @param net.weight A named vector, or NULL. Relative weight given to nodes of a component of graph, applied to seed vector in RWR. Only used when heterogeneous=TRUE.
 #' @param layer.weight A named list of named vectors, or NULL. Relative weight given to nodes of a layer of a component of graph, applied to seed vector in RWR. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.

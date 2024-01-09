@@ -21,7 +21,7 @@ RWR(
 
 \item{restart}{Restart parameter}
 
-\item{heterogeneous}{Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and node_type must be included as an argument or graph vertex attribute.}
+\item{heterogeneous}{Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites)}
 
 \item{multiplex}{Logical. If true, graph is assumed to contain multiplex components.}
 

@@ -41,7 +41,7 @@ create_integrated_graph(
 an igraph of the integrated graph with vertex attributes 'seeds' and 'Z' computed from data, FUN, and FUN.params
 }
 \description{
-Given a single graph-like object (igraph, adjacency matrix, or edge list) or a list of these, create a connected, integrated graph with seed values computed from \emph{data}, \emph{FUN}, and \emph{FUN.params}.
+Given a single graph-like object (igraph, adjacency matrix, or edge list) or a list of these, create an integrated graph with seed values computed from \emph{data}, \emph{FUN}, and \emph{FUN.params}.
 }
 \details{
 Heterogeneous graphs are graphs with more than one node type. We call these different subnetworks of node types \emph{components}. A multiplex graph has more than one edge or data type within a component, with the different subnetworks called \emph{layers}.

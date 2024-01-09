@@ -22,7 +22,7 @@ transition_matrix(
 
 \item{k}{Value between 0 and 1. When norm = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees raised to the power -k. As k increases, edge weights are penalized more for the degrees of their adjacent nodes.}
 
-\item{heterogeneous}{Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and node_type must be included as an argument or graph vertex attribute.}
+\item{heterogeneous}{Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites)}
 
 \item{multiplex}{Logical. If true, graph is assumed to contain multiplex components.}
 

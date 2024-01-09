@@ -3,7 +3,7 @@
 #' @title Create an integrated graph from a list of graph-like objects
 #'
 #' @description
-#' Given a single graph-like object (igraph, adjacency matrix, or edge list) or a list of these, create a connected, integrated graph with seed values computed from _data_, _FUN_, and _FUN.params_.
+#' Given a single graph-like object (igraph, adjacency matrix, or edge list) or a list of these, create an integrated graph with seed values computed from _data_, _FUN_, and _FUN.params_.
 #'
 #' @details
 #' Heterogeneous graphs are graphs with more than one node type. We call these different subnetworks of node types _components_. A multiplex graph has more than one edge or data type within a component, with the different subnetworks called _layers_.
