@@ -1,28 +1,29 @@
 Package: AMEND
 Title: Algorithm for Active Module Identification with Experimental Data and Network Diffusion
-Version: 1.0.0
-Date: 2022-10-31
+Version: 2.0.0
+Date: 2023-12-22
 Authors@R: 
     person(given = "Sam",
            family = "Boyd",
            role = c("aut", "cre"),
            email = "samsboyd21@gmail.com",
            comment = c(ORCID = "0000-0002-0025-7100"))
-Description: AMEND (Active Module identification using Experimental data and Network Diffusion) is an algorithm designed to find a subset of connected nodes in a molecular interaction network that have large experimental values from a high-throughput assay. It makes use of random walk with restart to create node weights, and a heuristic approach for solving the Maximum-weight Connected Subgraph problem using these weights. This is performed iteratively until an optimal subnetwork (i.e., module) is found.
+Description: AMEND (Active Module identification using Experimental data and Network Diffusion) is an algorithm designed to find a subset of connected nodes in a molecular interaction network (multiplex and/or heterogeneous!) that have large experimental values from a high-throughput assay. It makes use of random walk with restart to create node weights, and a heuristic approach for solving the Maximum-weight Connected Subgraph problem using these weights. This is performed iteratively until an optimal subnetwork (i.e., module) is found.
 License: GPL (>= 2)
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.1.1
+RoxygenNote: 7.2.3
 Imports: 
     igraph,
     Matrix,
     methods,
-    RSpectra,
-    sna
+    RSpectra
 Depends: 
     R (>= 2.10)
 Suggests: 
     rmarkdown,
-    knitr
+    knitr,
+    testthat (>= 3.0.0)
 VignetteBuilder: knitr
+Config/testthat/edition: 3
