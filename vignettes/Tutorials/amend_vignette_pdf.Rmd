@@ -1,9 +1,6 @@
 ---
 title: "AMEND Tutorial"
-output: 
-  rmarkdown::html_vignette:
-    toc: true
-    toc_depth: 2
+output: pdf_document
 vignette: >
   %\VignetteIndexEntry{AMEND Tutorial}
   %\VignetteEngine{knitr::rmarkdown}

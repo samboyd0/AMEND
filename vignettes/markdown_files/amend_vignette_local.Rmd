@@ -11,8 +11,10 @@ vignette: >
 ---
 
 <!---
-Run this code to locally knit the vignette.
-knitr::knit("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/markdown_files/amend_vignette_local.Rmd.orig", 
+To generate 'amend_vignette.Rmd':
+  1) Duplicate 'amend_vignette_local.Rmd' and add '.orig' extension to create 'amend_vignette_local.Rmd.orig'
+  2) Run this code to locally knit the vignette.
+     knitr::knit("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/markdown_files/amend_vignette_local.Rmd.orig", 
             output = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/vignettes/amend_vignette.Rmd")
 
 Resource:
@@ -30,7 +32,11 @@ knitr::opts_chunk$set(
 
 ```{r setup, include = FALSE}
 # library(AMEND)
-source("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/R/main.R")
+source("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/R/run_AMEND.R")
+source("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/R/create_integrated_graph.R")
+source("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/R/RandomWalk.R")
+source("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/R/heinz.R")
+source("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/AMEND/R/utils.R")
 library(GEOquery)
 library(limma)
 library(ECEA)
@@ -40,15 +46,17 @@ library(mgu74av2.db)
 library(biomaRt)
 library(igraph)
 library(data.table)
+
+extract_string2 = function(x, k, pos) unlist(lapply(strsplit(x, k), function(y) y[pos]))
 ```
 
 # Introduction
 
-A powerful approach for the analysis of omics data is to integrate them with molecular interaction networks. Specifically, the integration of microarray/RNA-seq data with protein-protein interaction (PPI) networks has emerged as an effective way to elucidate important genes involved in a biological process. These approaches are often called active module identification (AMI) methods and have the goal of finding a subset of genes (either connected or disconnected) in the PPI network that are relevant to the biological conditions of the experiment.
+A powerful approach for the analysis of omics data is to integrate them with molecular interaction networks. For example, the integration of microarray/RNA-seq data with protein-protein interaction (PPI) networks has emerged as an effective way to elucidate important genes involved in a biological process. These approaches are often called active module identification (AMI) methods and have the goal of finding a subset of genes (either connected or disconnected) in the PPI network that are highly associated with the biological conditions of the experiment.
 
-AMEND is an AMI method that takes as input a PPI network and gene-wise experimental scores (e.g., log fold change) and returns a connected module. AMEND relies on random walk with restart (RWR) and a heuristic solution to the maximum-weight connected subgraph (MWCS) problem to iteratively filter out genes until an optimal subnetwork is found. At each iteration, the current network is input into RWR, with the gene-wise experimental scores serving as seed values. This produces node weights, which are shifted downwards by a certain quantile (called the filtering rate), resulting in both positive and negative node weights. These weights are used to find a maximum-weight connected subgraph. AMEND uses a heuristic solution first implemented in the [BioNet](https://bioconductor.org/packages/release/bioc/html/BioNet.html) package. This produces a subnetwork, which is the input for the next iteration. Each subnetwork is scored by the product of the mean standardized experimental scores (standardized w.r.t. all genes in original network) and the mean core-clustering coefficient (a measure of node connectivity). The process stops when there is no change in subnetwork between iterations or when only 2 nodes remain in the subnetwork. The subnetwork with the largest score is returned. 
+AMEND is an AMI method that takes as input an interaction network and feature-wise experimental scores (e.g., log fold change) and returns a connected module. AMEND relies on random walk with restart (RWR) and a heuristic solution to the maximum-weight connected subgraph (MWCS) problem to iteratively filter out nodes until an optimal subnetwork is found. At each iteration, the current network is input into RWR, with the feature-wise experimental scores serving as seed values. This produces node weights, which are shifted downwards by a certain quantile (called the filtering rate), resulting in both positive and negative node weights. These weights are used to find a maximum-weight connected subgraph. AMEND uses a heuristic solution first implemented in the [BioNet](https://bioconductor.org/packages/release/bioc/html/BioNet.html) package. This produces a subnetwork, which is the input for the next iteration. Each subnetwork is scored by the product of the mean standardized experimental scores (standardized w.r.t. all nodes in original network) and the mean core-clustering coefficient (a measure of node connectivity). The process stops when there is no change in subnetwork between iterations or when only 2 nodes remain in the subnetwork. The subnetwork with the largest score is returned. 
 
-A key concept in AMEND is the filtering rate, which determines how the untreated RWR scores are shifted before input into the heuristic MWCS solution. The filtering rate is actually a quantile of the untreated RWR scores. As the quantile decreases, each RWR score is subtracted by a smaller number, resulting in fewer negatively weighted nodes, which results in fewer genes filtered out by the MWCS solution. In this sense, the quantile used to shift the untreated RWR scores is a filtering rate. This filtering rate follows an exponential decay schedule, which has two hyperparameters: the starting filtering rate and the decay value. 
+A key concept in AMEND is the filtering rate, which determines how the untreated RWR scores are shifted before input into the heuristic MWCS solution. The filtering rate is actually a quantile of the untreated RWR scores. As the quantile decreases, each RWR score is subtracted by a smaller number, resulting in fewer negatively weighted nodes, which results in fewer genes filtered out by the MWCS solution. In this sense, the quantile used to shift the untreated RWR scores is a filtering rate. This filtering rate follows an exponential decay schedule, which has two hyperparameters: the starting filtering rate and the decay. 
 
 The decay parameter determines the rate at which the shifting quantile decreases. This value is determined by simulation. The decay is set to the maximum value that will allow the algorithm to arrive at a subnetwork of size $n$. If the decay is too large, the filtering rate will approach zero too quickly. This causes the algorithm to stop early since no nodes will be removed with a filtering rate of zero. The parameter $n$ is set by the user and approximates the size of the final module. 
 
@@ -62,9 +70,9 @@ AMEND is hosted on [GitHub](https://github.com/samboyd0/AMEND) and can be instal
 devtools::install_github("samboyd0/AMEND", build_vignettes = TRUE)
 ```
 
-# Example
+# Example 1
 
-This example will focus on a gene expression microarray experiment to illustrate a typical use case for AMEND. 
+This first example will focus on a gene expression microarray experiment to illustrate a typical use case for AMEND. 
 
 ## GLUT4 Data Description
 
@@ -178,7 +186,7 @@ datFC <- datFC %>% dplyr::select(-Gene)
 
 For this example, a _mus musculus_ PPI network is downloaded from STRING (v11.0). Edges appear twice in the downloaded file, necessitating a helper function to remove the duplicate edges. Only interactions with a confidence score $\ge$ 0.8 are kept.
 
-```{r PPI, eval = file.exists("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt")}
+```{r PPI, eval = file.exists("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt.gz")}
 # Getting mapping between Mouse Gene Symbols <--> Ensembl Peptide IDs
 gene_symbols <- row.names(dat)
 # ensembl <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
@@ -201,7 +209,7 @@ remove_duplicate_edges = function(x){
 
 # Loading in mus musculus PPIN from String v11.0... 
 # Can be downloaded from STRING website, but make sure you're on the right version
-file_path = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt"
+file_path = "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt.gz"
 ppi = data.table::fread(file = file_path,
                         header = TRUE, sep = " ") %>%
   dplyr::filter(combined_score >= 800) %>%
@@ -263,23 +271,19 @@ head(logFC_KO)
 ## Running AMEND with ECI
 
 Now that we have analyzed our microarray data and obtained a PPI network, we can continue with the active module identification step. It is important to clarify the biological question of interset that we want to answer. For the GLUT4 KO-OX experiment, it may be of interest to know which genes are affected in opposing ways by the two treatments. A gene that is up-regulated in the KO-control arm and down-regulated in the OX-control arm suggests a close association of that gene with GLUT4.
-The ECI is well suited to answer this type of question. Since we are interested in inversely regulated genes, we will want to set `data.type = "ECI"` and `DOI = "negative"`. We will set `n = 25` to specify the approximate size of the final module.
+The ECI is well suited to answer this type of question. Since we are interested in inversely regulated genes, we will want to set `data = "ECI"`, `FUN = "shift_scale"`, and `FUN.params = list(DOI = -1, w = 0.5)`. The `FUN = "shift_scale"` argument is meant for data types that are centered about 0. As the name implies, it shifts all values to their absolute value and then scales input values that weren't in the direction of interest (_DOI_) by a certain factor _w_, thus transforming the input into all non-negative values. We will set `n = 25` to specify the approximate size of the final module.
 
-The `normalize` argument specifies how to normalize the adjacency matrix for random walk with restart (RWR). `normalize = "core"` will use node coreness to normalize the adjacecy matrix, whereas `normalize = "degree"` will column normalize the adjacency matrix using node degree. The seed.weight argument specifies how to transform the ECI values for use as seed values in RWR. Seed values must be non-negative, but ECI has a range of $[-1,1]$, necessitating some transformation. The scheme used in AMEND is to take the absolute value of the ECIs, then weight the values _not_ in the direction of interest by some constant in $[0,1]$. For example, when interested in negative ECIs, $seed.weight = 0.5$ translates into weighting a positive ECI gene half that of a negative ECI gene of equal magnitude. 
+The `normalize` argument specifies how to normalize the adjacency matrix for random walk with restart (RWR). `normalize = "degree"` will column normalize the adjacency matrix using node degree. The other option, `normalize = "modified_degree"`, first modifies the adjacency matrix by left and right multiplying by a diagonal matrix whose elements are the node degrees raised to the power $-k$: $A^{\prime}=D^{-k}AD^{-k}$. The resulting symmetric matrix is then column-normalized as usual. This approach penalizes edge weights in proportion to the product of the degrees of its adjacent nodes, leading to reduced transition probabilities __to__ a target node in proportion to that target node's degree. One can also view this approach as a biased random walk. Since the modified adjacency matrix is column-normalized, the values from the right diagonal matrix cancel out, thus one can obtain the same transition matrix by only left-multiplying the original adjacency matrix by the diagonal matrix described above ($A^{\prime}=D^{-k}A$) and then column-normalizing. The node attribute values used for this biased random walk are then $d^{-k}_{i}$ for node $i$. `normalize = "modified_degree"` is one way to reduce the influence of degree on diffusion scores.
 
 ```{r runECI}
 # Using the igraph object as input
-module = run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", DOI = "negative", 
-                   normalize = "degree", seed.weight = 0.5)
-# module = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "ECI", DOI = "negative", 
-#                    normalize = "core", seed.weight = 0.5)
+module = run_AMEND(graph = glut4_graph, n = 25, data = "ECI", FUN = "shift_scale", 
+                   FUN.params = list(DOI = -1, w = 0.5), normalize = "degree")
 
 # Can also use the adjacency matrix and vector of node scores
 if(0){
-  module = run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
-                     DOI = "negative", normalize = "degree", seed.weight = 0.5)
-  # module = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = eci_scores, n = 25, data.type = "ECI", 
-  #                    eci.direction = "negative", normalize = "core", seed.weight = 0.5)
+  module = run_AMEND(adj_matrix = glut4_adjM, data = eci_scores, n = 25, FUN = "shift_scale", 
+                   FUN.params = list(DOI = -1, w = 0.5), normalize = "degree")
 }
 ```
 
@@ -298,21 +302,17 @@ module$time
 
 ## Running AMEND with log fold change 
 
-AMEND can also accommodate log fold changes. We have log fold changes for the GLUT4 KO vs. control DE analysis. Suppose we are interested in genes with large log fold changes, regardless of direction. Then we would set `data.type = "logFC"` and `DOI = "both"`.
+AMEND can also accommodate log fold changes. We have log fold changes for the GLUT4 KO vs. control DE analysis. Suppose we are interested in genes with large log fold changes, regardless of direction. Then we would set `data = "logFC"`, `FUN = "exp"`, and `FUN.params = list(DOI = 0)`.
 
 ```{r runLogFC}
 # Using the igraph object as input
-module2 = run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", DOI = "both", 
-                   normalize = "degree", seed.weight = 0.5)
-# module2 = AMEND::run_AMEND(graph = glut4_graph, n = 25, data.type = "logFC", logFC.direction = "both", 
-#                    normalize = "core", seed.weight = 0.5)
+module2 = run_AMEND(graph = glut4_graph, n = 25, data = "logFC", FUN = "exp", 
+                   FUN.params = list(DOI = 0), normalize = "degree")
 
 # Can also use the adjacency matrix and vector of node scores
 if(0){
-  module2 = run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
-                      DOI = "both", normalize = "degree", seed.weight = 0.5)
-  # module2 = AMEND::run_AMEND(adj_matrix = glut4_adjM, node_scores = logFC_KO, n = 25, data.type = "logFC", 
-  #                     logFC.direction = "both", normalize = "core", seed.weight = 0.5)
+  module2 = run_AMEND(adj_matrix = glut4_adjM, n = 25, data = logFC_KO, FUN = "exp", 
+                   FUN.params = list(DOI = 0), normalize = "degree")
 }
 ```
 
@@ -333,7 +333,7 @@ Suppose that we want to investigate an intermediate subnetwork that was generate
 
 ```{r get_subnet_Ex}
 # Using get_subnetwork()
-subnet6 = get_subnetwork(amend_object = module2, k = 6)
+subnet6 = get_subnetwork(ig = glut4_graph, amend_object = module2, k = 6)
 subnet6
 
 # Directly from module2
@@ -342,20 +342,310 @@ module2$subnetworks[[6]]
 
 # Extensions
 
-## Heterogeneous Networks
+## Heterogeneous/Multiplex Networks
 
-A network is heterogeneous if it contains more than one node type. This allows for the joint analysis of different omics data types, by creating a heterogeneous network of the features from the different omics experiments (e.g., proteins and metabolites) and then mapping the experimental values from the omics experiments to their respective nodes. RWR has been generalized to heterogeneous networks ([Li et al.](https://doi.org/10.1093/bioinformatics/btq108)). Since AMEND implements RWR, the algorithm can accommodate these heterogeneous networks. Currently, AMEND can only take a network of at most two node types. If the user has a heterogeneous network with omics data that they would like to analyze with AMEND, they must specify `heterogeneous = TRUE`, along with the following arguments: `node_type`, `jump`, and `net1.weight`.
+A network is heterogeneous if it contains more than one node type, with the different parts of the network corresponding to these node types called _components_. Traditionally, a network is defined as multiplex if, for the same node type, there is more than one edge type, resulting in different parts of the network called _layers_,  which are connected by linking common nodes between layers. However, this definition can be extended to include multiple data types as well, thus allowing one to integrate multiple data types for the same node type. Heterogeneous-multiplex networks give us a means to create increasingly complex and realistic models of biological systems through the integration of different omics types in the same analytic object.
 
-RWR has also been generalized to multiplex networks (multiple edge types) and to multiplex-heterogeneous networks ([Valdeolivas et al.](https://doi.org/10.1093/bioinformatics/bty637)). AMEND cannot yet accommodate multiplex or multiplex-heterogeneous networks, but it is fairly straight-forward to modify the algorithm such that this would be possible.
+Previously, RWR has been generalized to heterogeneous-monoplex networks ([Li et al.](https://doi.org/10.1093/bioinformatics/btq108)), heterogeneous-multiplex networks of only 2 components ([Valdeolivas et al.](https://doi.org/10.1093/bioinformatics/bty637)), and heterogeneous-multiplex networks of an arbitrary number of components ([Baptista et al.](https://doi.org/10.1038/s42005-022-00937-9)). AMEND implements a generalized version of RWR (slightly different than that of Baptista _et al._) and so can accommodate these heterogeneous/multiplex networks. If the user has a heterogeneous network with omics data that they would like to analyze with AMEND, they must specify `heterogeneous = TRUE`, along with the following arguments: `jump.prob`, and `net.weight`. For multiplex networks, the user must specify `multiplex = TRUE` along with `switch.layer.prob` and `layer.weight`.
+
+### Monoplex-heterogeneous Network
+
+The next three sections will illustrate examples of AMEND with these more complex networks. The first example focuses on a monoplex-heterogeneous network consisting of proteins and metabolites (or chemicals).
+
+The code chunk below will create edge lists for the PPI, metabolite-metabolite interaction (MMI), and bipartite networks. Random data is generated from a standard normal distribution, representing log fold changes. It is important to note the naming scheme that has been used. I have appended an identifier for each component ('prot' and 'meta') to the ends of each node name, separated by '|'. This is so that the algorithm can identify the component to which each node belongs. 
+
+```{r}
+file_paths = c("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt.gz",
+                 "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/chemical_chemical.links.detailed.v5.0.tsv.gz",
+                 "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein_chemical.links.v5.0.tsv.gz")
+# Protein-protein interactions
+ppi = data.table::fread(file = file_paths[1],
+                          header = TRUE) %>%
+    dplyr::filter(combined_score >= 800) %>%
+    dplyr::rename(node1 = protein1,
+                  node2 = protein2) %>%
+    dplyr::mutate(node1 = paste0(node1, "|prot"),
+                  node2 = paste0(node2, "|prot"),
+                  combined_score = combined_score / 1000) %>%
+    as.matrix()
+# Unique protein names
+uniq.prot = unique(extract_string2(c(ppi[,1], ppi[,2]), "\\|", 1))
+
+# Metabolite-metabolite interactions
+mmi = data.table::fread(file = file_paths[2],
+                          header = TRUE) %>%
+    dplyr::filter(combined_score >= 800) %>%
+    dplyr::select(chemical1, chemical2, combined_score) %>%
+    dplyr::rename(node1 = chemical1,
+                  node2 = chemical2) %>%
+    dplyr::mutate(node1 = paste0(node1, "|meta"),
+                  node2 = paste0(node2, "|meta"),
+                  combined_score = combined_score / 1000) %>%
+    as.matrix()
+# Getting a smaller subnetwork from this very large metabolite network
+g.meta = igraph::graph_from_edgelist(mmi[,1:2], directed=FALSE)
+E(g.meta)$weight = as.numeric(mmi[,3])
+g.meta = igraph::simplify(graph = g.meta, edge.attr.comb = list(weight = "min"))
+set.seed(55)
+clust = igraph::cluster_louvain(graph = g.meta)
+c.tbl = sort(table(clust$membership), decreasing = TRUE)
+clust.id = as.numeric(names(c.tbl)[3])
+subg.meta = igraph::induced_subgraph(graph = g.meta, 
+                                     vids = which(clust$membership %in% clust.id))
+if(!is_connected(subg.meta)) subg.meta = largest_connected_component(subg.meta)
+mmi = as_edgelist(subg.meta)
+mmi = cbind(mmi, E(subg.meta)$weight)
+uniq.meta = unique(extract_string2(c(mmi[,1], mmi[,2]), "\\|", 1))
+
+# Bipartite interactions 
+bp = data.table::fread(file = file_paths[3],
+                         header = TRUE) %>%
+    dplyr::filter(combined_score >= 800) %>%
+    dplyr::filter(protein %in% uniq.prot,
+                  chemical %in% uniq.meta) %>%
+    dplyr::rename(node1 = chemical,
+                  node2 = protein) %>%
+    dplyr::mutate(node1 = paste0(node1, "|meta"),
+                  node2 = paste0(node2, "|prot"),
+                  combined_score = combined_score / 1000) %>%
+    as.matrix()
+
+edgelists = list(prot = ppi, meta = mmi, "prot;meta" = bp)
+
+# Creating random data 
+data.list.input = vector("list", 2)
+names(data.list.input) = c("prot", "meta")
+for(i in seq_along(data.list.input)){
+  uniq.names = extract_string2(unique(c(edgelists[[i]][,1], edgelists[[i]][,2])), "\\|", 1)
+  data.list.input[[i]] = rnorm(n = length(uniq.names), mean = 0, sd = 1) # shift_scale or exp
+  names(data.list.input[[i]]) = uniq.names
+}
+# Setting heterogeneous parameters
+net.weight = c(prot = 0.5, meta = 0.5)
+jump.prob = c(prot = 0.7, meta = 0.3)
+
+# FUN and FUN.params
+FUN = list(prot = "shift_scale", meta = function(x, k) abs(x) * k)
+FUN.params = list(prot = list(DOI = 1, w = 0.5), meta = list(k = 1.2))
+
+```
+
+Next, we illustrate how to use `create_integrated_graph()`, which will merge common nodes between multiplex layers and merge different components using the provided bipartite connections. The edge lists may not give a connected graph, so we specify `lcc=TRUE` to return the **l**argest **c**onnected **c**omponent. For `run_AMEND()`, we specify an approximate final module size of 50, with degree normalization for the construction of the transition matrix. It is not necessary to run `create_integrated_graph()` before `run_AMEND`, since the former is called within the latter to create a single network object on which to run the algorithm. So, the edge lists can be input directly into `run_AMEND()`. If the network is heterogeneous and the network input is in list format, there must be a list element that corresponds to the bipartite connections between the different components. The naming scheme to denote bipartite graphs must follow 'component1;component2'. In this example, as seen below, the bipartite graph is named 'prot;meta' to denote that this list element contains proteins, metabolites, and connections between them. Node names in these bipartite graphs must be appended with their correct component before input into `run_AMEND()`. 
+
+```{r}
+names(edgelists)
+
+g.tmp = create_integrated_graph(edge_list = edgelists, data = data.list.input, node_type = NULL, 
+                            brw.attr = NULL, FUN = FUN, FUN.params = FUN.params, 
+                            heterogeneous = TRUE, multiplex = FALSE, lcc = TRUE)
+g.tmp
+table(V(g.tmp)$node_type)
+
+subnet = run_AMEND(edge_list = edgelists, n = 50, data = data.list.input, node_type = NULL, 
+                   brw.attr = NULL, FUN = FUN, FUN.params = FUN.params, 
+                   heterogeneous = TRUE, multiplex = FALSE, normalize = "degree", 
+                   jump.prob = jump.prob, net.weight = net.weight, verbose = TRUE)
+subnet$module
+table(V(subnet$module)$node_type)
+```
+
+### Multiplex-homogeneous Network
+
+The code chunk below will create a list of adjacency matrices for 3 different layers of a PPI network, which may represent PPI networks containing distinct edge types, or they may represent the same network but the data that will be diffused on each layer will be different. For this example, the latter is the case. Random data is sampled from {0,1}, with 1's representing significantly up- or down-regulated genes. The different layers are simulated by taking different clusters of the PPI network after running the Louvain clustering algorithm. In order to be able to locate a node in a specific component and layer, each node name needs to be appended with '|component_layer'. In this case, each node is appended with either '|prot_1', '|prot_2', or '|prot_3', where 'prot' indicates the node type, and '1', '2', and '3' indicate the layer. If the network input is in list format, the component/layer information does not need to be appended to node names; the list names can provide this information and the algorithm will automatically append this info. This is the case for the following example.
+
+```{r}
+file_paths = c("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt.gz")
+ppi = data.table::fread(file = file_paths[1],
+                          header = TRUE) %>%
+    dplyr::filter(combined_score >= 800) %>%
+    dplyr::rename(node1 = protein1,
+                  node2 = protein2) %>%
+    dplyr::mutate(combined_score = combined_score / 1000) %>%
+    as.matrix()
+g.prot = igraph::graph_from_edgelist(ppi[,1:2], directed=FALSE)
+E(g.prot)$weight = as.numeric(ppi[,3])
+g.prot = igraph::simplify(graph = g.prot, edge.attr.comb = list(weight = "min"))
+if(!igraph::is_connected(g.prot)) g.prot = largest_connected_component(g.prot)
+
+# Creating multiplex component
+set.seed(305)
+list.of.adjmats = vector("list", 3); names(list.of.adjmats) = paste(rep("prot", 3), 1:3, sep = "_")
+# Split PPIN into layers for transcriptomic, proteomic, and phospho-proteomic data
+clusts = igraph::cluster_louvain(graph = g.prot) # Louvain method for getting clusters
+k = 1 # Include k-nearest neighbors
+for(i in 1:3){
+  t.ids = which(clusts$membership == i)
+  t.ids = unique(as.numeric(unlist(igraph::neighborhood(graph = g.prot, order = k, nodes = t.ids))))
+  tmp = igraph::induced_subgraph(g.prot, t.ids)
+  tmp = largest_connected_component(tmp)
+  list.of.adjmats[[i]] = igraph::as_adjacency_matrix(tmp, attr = "weight", sparse = T)
+}
+
+# Create object for 'data' argument
+data.list.input = vector("list", 3)
+names(data.list.input) = c("prot_1", "prot_2", "prot_3")
+for(i in seq_along(data.list.input)){
+  data.list.input[[i]] = sample(x = c(0,1), size = nrow(list.of.adjmats[[i]]), 
+                                replace = T, prob = c(0.9, 0.1)) # binary
+  names(data.list.input[[i]]) = rownames(list.of.adjmats[[i]])
+}
+
+# Setting multiplex parameters
+layer.weight = list(prot = c(prot_1 = 0.4, prot_2 = 0.3, prot_3 = 0.3))
+switch.layer.prob = list(prot = c(prot_1 = 0.4, prot_2 = 0.5, prot_3 = 0.5))
+```
+
+Below, we create an integrated graph from the separate multiplex layers. We also use `run_AMEND()` with the list of multiplex layer adjacency matrices, using simulated binary data. We set `normalize="modified_degree"` and `k=0.5` to mitigate the influence of degree on diffusion scores. 
+
+```{r}
+g.tmp = create_integrated_graph(adj_matrix = list.of.adjmats, data = data.list.input, node_type = NULL, 
+                            brw.attr = NULL, FUN = "binary", FUN.params = NULL, 
+                            heterogeneous = FALSE, multiplex = TRUE, lcc = TRUE)
+g.tmp
+table(V(g.tmp)$node_type)
+
+subnet = run_AMEND(adj_matrix = list.of.adjmats, n = 100, data = data.list.input, node_type = NULL, 
+                   brw.attr = NULL, FUN = "binary", FUN.params = NULL, heterogeneous = FALSE, 
+                   multiplex = TRUE, normalize = "modified_degree", k = 0.5, 
+                   switch.layer.prob = switch.layer.prob, layer.weight = layer.weight, verbose = TRUE)
+subnet$module
+table(V(subnet$module)$node_type)
+```
+
+### Multiplex-heterogeneous Network
+
+This is the most complex example of this vignette, where we are creating a multiplex-heterogeneous network. Below, we create a PPI, MMI, and bipartite network. Then, using the Louvain clustering algorithm, we simulate multiplex layers for the PPI network. These 3 layers will be used to diffuse 3 different datasets on the same interaction network, allowing for data integration and for controlled cross-talk between each layer using the `switch.layer.prob` parameter. The data used in this example comes from a Uniform(0,1) distribution, representing p-values from some omic experiment.
+
+```{r}
+file_paths = c("/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein.links.v11.0.txt.gz",
+                 "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/chemical_chemical.links.detailed.v5.0.tsv.gz",
+                 "/Users/samboyd/Documents/GRA/Network Analysis/AMEND/R_package/10090.protein_chemical.links.v5.0.tsv.gz")
+ppi = data.table::fread(file = file_paths[1],
+                          header = TRUE) %>%
+    dplyr::filter(combined_score >= 800) %>%
+    dplyr::rename(node1 = protein1,
+                  node2 = protein2) %>%
+    dplyr::mutate(node1 = paste0(node1, "|prot"),
+                  node2 = paste0(node2, "|prot"),
+                  combined_score = combined_score / 1000) %>%
+    as.matrix()
+g.prot = igraph::graph_from_edgelist(ppi[,1:2], directed=FALSE)
+E(g.prot)$weight = as.numeric(ppi[,3])
+g.prot = igraph::simplify(graph = g.prot)
+uniq.prot = unique(extract_string2(c(ppi[,1], ppi[,2]), "\\|", 1))
+
+mmi = data.table::fread(file = file_paths[2],
+                          header = TRUE) %>%
+    dplyr::filter(combined_score >= 800) %>%
+    dplyr::select(chemical1, chemical2, combined_score) %>%
+    dplyr::rename(node1 = chemical1,
+                  node2 = chemical2) %>%
+    dplyr::mutate(node1 = paste0(node1, "|meta"),
+                  node2 = paste0(node2, "|meta"),
+                  combined_score = combined_score / 1000) %>%
+    as.matrix()
+g.meta = igraph::graph_from_edgelist(mmi[,1:2], directed=FALSE)
+E(g.meta)$weight = as.numeric(mmi[,3])
+g.meta = igraph::simplify(graph = g.meta, edge.attr.comb = list(weight = "min"))
+set.seed(55)
+clust = igraph::cluster_louvain(graph = g.meta)
+c.tbl = sort(table(clust$membership), decreasing = TRUE)
+clust.id = as.numeric(names(c.tbl)[3])
+subg.meta = igraph::induced_subgraph(graph = g.meta, vids = which(clust$membership %in% clust.id))
+if(!is_connected(subg.meta)) subg.meta = largest_connected_component(subg.meta)
+mmi = as_edgelist(subg.meta)
+mmi = cbind(mmi, E(subg.meta)$weight)
+uniq.meta = unique(extract_string2(c(mmi[,1], mmi[,2]), "\\|", 1))
+
+bp = data.table::fread(file = file_paths[3],
+                         header = TRUE) %>%
+    dplyr::filter(combined_score >= 800) %>%
+    dplyr::filter(protein %in% uniq.prot,
+                  chemical %in% uniq.meta) %>%
+    dplyr::rename(node1 = chemical,
+                  node2 = protein) %>%
+    dplyr::mutate(node1 = paste0(node1, "|meta"),
+                  node2 = paste0(node2, "|prot"),
+                  combined_score = combined_score / 1000) %>%
+    as.matrix()
+
+el = rbind(ppi, mmi, bp)
+
+g = igraph::graph_from_edgelist(el = el[,1:2], directed = FALSE)
+E(g)$weight = as.numeric(el[,3])
+g = igraph::simplify(graph = g, edge.attr.comb = list(weight = "min"))
+if(!is_connected(g)) g = largest_connected_component(g)
+
+# Creating multiplex component
+g.prot = igraph::induced_subgraph(g, which(extract_string2(V(g)$name, "\\|", 2) == "prot"))
+V(g.prot)$name = extract_string2(V(g.prot)$name, "\\|", 1)
+if(!igraph::is_connected(g.prot)) g.prot = largest_connected_component(g.prot)
+g.tmp = vector("list", 3); names(g.tmp) = paste(rep("prot", 3), 1:3, sep = "_")
+# Split PPIN into layers for transcriptomic, proteomic, and phospho-proteomic data
+clusts = igraph::cluster_louvain(graph = g.prot) # Louvain method for getting clusters
+k = 1 # Include k-nearest neighbors
+for(i in 1:3){
+  t.ids = which(clusts$membership == i)
+  t.ids = unique(as.numeric(unlist(igraph::neighborhood(graph = g.prot, order = k, nodes = t.ids))))
+  tmp = igraph::induced_subgraph(g.prot, t.ids)
+  g.tmp[[i]] = largest_connected_component(tmp)
+}
+
+g.meta = igraph::induced_subgraph(g, grep(pattern = "\\|meta", x = V(g)$name))
+if(!igraph::is_connected(g.meta)) g.meta = largest_connected_component(g.meta)
+
+bp.node = logical(vcount(g))
+for(i in seq_along(bp.node)){
+  nei = as_ids(neighbors(g, i, mode="all"))
+  bp.node[i] = all(c("prot", "meta") %in% extract_string2(nei, "\\|", 2))
+}
+
+g.bp = igraph::induced_subgraph(g, which(bp.node))
+
+list.of.graphs = c(g.tmp, meta = list(g.meta), "prot;meta" = list(g.bp))
+
+# Create data vertex attributes, called 'scores'
+v.attr.name = "scores"
+node.types = c("prot_1", "prot_2", "prot_3", "meta")
+for(i in seq_along(node.types)){
+  igraph::vertex_attr(list.of.graphs[[node.types[i]]], v.attr.name) = runif(vcount(list.of.graphs[[node.types[i]]])) # p-value
+}
+
+# Setting multiplex/heterogeneous parameters
+layer.weight = list(prot = rep(1/3, 3))
+switch.layer.prob = list(prot = c(prot_1 = 0.5, prot_2 = 0.2, prot_3 = 0.8))
+net.weight = c(prot = 0.5, meta = 0.5)
+jump.prob = c(prot = 0.5, meta = 0.3)
+```
+
+Again, we illustrate the use of `create_integrated_graph()` to construct a graph that combines the different components and multiplex layers. We also use `run_AMEND()` using the list of igraph objects. The `FUN = "p_value"` argument will take the negative log transform of the input `data`. Alternatively, we could specify a named list for `FUN` if we wanted to use different functions for the different components of the network. Equal weight is given to the seed values of each component; however, the jump probability (`jump.prob`) for the MMI component is 0.3, compared to 0.5 for the PPI component. Therefore, the random walker will be less likely to jump from the MMI component, which will result in larger scores for those nodes. A similar story can be told for `switch.layer.prob`; the lower the values for these parameters, the less likely the random walker will leave that layer or component, resulting in larger node scores.
+
+```{r}
+g.tmp = create_integrated_graph(graph = list.of.graphs, data = "scores", node_type = NULL, 
+                                brw.attr = NULL, FUN = FUN, FUN.params = FUN.params, 
+                                heterogeneous = TRUE, multiplex = TRUE)
+g.tmp
+table(V(g.tmp)$node_type)
+
+subnet = run_AMEND(graph = list.of.graphs, n = 100, data = "scores", node_type = NULL, brw.attr = NULL,
+                     FUN = "p_value", FUN.params = NULL, heterogeneous = TRUE, multiplex = TRUE,
+                     normalize = "degree", jump.prob = jump.prob, 
+                     net.weight = net.weight, switch.layer.prob = switch.layer.prob, 
+                     layer.weight = layer.weight, verbose = TRUE)
+subnet$module
+table(V(subnet$module)$node_type)
+
+```
 
 ## Mitigating Degree Bias
 
-PPI networks have largely been recognized to suffer from a node degree bias arising from technical and study biases associated with PPI experiments. Many experimental approaches for ascertaining PPIs use a bait and prey paradigm. The degree of a protein in a PPI network (the number of proteins that protein has been shown to interact with) is highly dependent on the number of times it has been used as bait in PPI experiments. The degree also depends on the general research interest that exists for a protein; some proteins are implicated in disease areas that benefit from more active research as compared to others. This causes the degrees of some proteins to be inflated compared to others, which manifests itself in higher propagation scores for those proteins with inflated degree. 
+PPI networks have largely been recognized to suffer from a node degree bias arising from technical and study biases associated with PPI experiments. Many experimental approaches for ascertaining PPIs use a bait and prey paradigm. The degree of a protein in a PPI network (the number of proteins that protein has been shown to interact with) is highly dependent on the number of times it has been used as bait in PPI experiments. The degree also depends on the general research interest that exists for a protein; some proteins are implicated in disease areas that benefit from more active research as compared to others. This causes the degrees of some proteins to be inflated compared to others, which manifests itself in higher diffusion scores for those proteins with inflated degree. 
 
-Most active module identification methods do not address degree bias, although several approaches have been developed to deal with the issue. Many are permutation-based involving permuations of the data or random networks. Others adjust propagation scores according to node centrality. Still others attempt to address degree bias in the creation of the transition matrix prior to any network propagation method. Notably, the developers of NetCore [Barel et al.](https://doi.org/10.1093/nar/gkaa639) use node coreness (rather than degree) to create the transition matrix and thus claim to address degree bias, where coreness is a global measure of node connectivity (whereas degree is a local measure). However, upon reflection, this claim may be incorrect. In the core-normalized transition matrix $M=(m_{ij})$, the probability of moving from node $j$ to node $i$ (i.e., $Pr(j\rightarrow i)$) is $m_{ij}=\frac{k_i}{\sum_{l\in S_j}k_l}$, where $k_i$ is the coreness of node $i$ and $S_j$ is the set of neighbors of node $j$. Therefore, the probability of moving to node $i$ depends on its coreness, which is a measure of its connectivity and is highly correlated with its degree. In the context of RWR, a random walker may be _more_ likely to move to a node that is subject to degree bias (i.e., has an inflated degree, and by correlation, an inflated coreness), resulting in a larger propagation score and an exacerbation of the degree bias issue. Therefore, I recommend using `normalize = degree` to create the transition matrix, where $Pr(j\rightarrow i)$ does _not_ depend on the degree of node $i$. 
+Most active module identification methods do not address degree bias, although several approaches have been developed to deal with the issue. Many are permutation-based involving permuations of the data or random networks. Others adjust diffusion scores according to node centrality. Still others attempt to address degree bias in the creation of the transition matrix prior to any network diffusion method. Notably, the developers of NetCore [Barel et al.](https://doi.org/10.1093/nar/gkaa639) use node coreness (rather than degree) to create the transition matrix and thus claim to address degree bias, where coreness is a global measure of node connectivity (whereas degree is a local measure). However, upon reflection, this claim seems to be incorrect. In the core-normalized transition matrix $M=(m_{ij})$, the probability of moving from node $j$ to node $i$ (i.e., $Pr(j\rightarrow i)$) is $m_{ij}=\frac{k_i}{\sum_{l\in S_j}k_l}$, where $k_i$ is the coreness of node $i$ and $S_j$ is the set of neighbors of node $j$. Therefore, the probability of moving to node $i$ depends on its coreness, which is a measure of its connectivity and is highly correlated with its degree. In the context of RWR, a random walker may be _more_ likely to move to a node that is subject to degree bias (i.e., has an inflated degree, and by correlation, an inflated coreness), resulting in a larger diffusion score and an exacerbation of the degree bias issue. Therefore, AMEND provides the option `normalize = degree` to create the transition matrix, where $Pr(j\rightarrow i)$ does _not_ depend on the degree of node $i$. An alternative is `normalize = modified_degree`, which first creates a modified adjacency matrix that penalizes edge weights in proportion to the product of the degrees of its adjacent nodes and then column-normalizes this modified adjacency matrix.
 
-A procedure currently in development wih the goal of mitigating degree bias is called _inflation-normalization_. This procedure is applied directly to the transition matrix and works by globally attenuating the influence that degree has on propagation scores. Assuming a left stochastic transition matrix, inflation-normalization applies the inflation operator introduced in the Markov Clustering algorithm to the rows of the transition matrix, followed by column normalization. As this is still in development, users are encouraged to use it with caution. More details will be forthcoming as the procedure matures. 
-
+<!---
+A procedure currently in development wih the goal of mitigating degree bias is called _bistochastic scaling_, which is applied directly to the transition matrix and globally attenuates the influence that degree has on diffusion scores. Assuming a left stochastic transition matrix, this procedure transforms the input transition matrix such that it is approximately bistochastic (doubly stochastic). As this is still in development, this feature isn't currently available to users. More details will be forthcoming as the methodology matures.
+--->
 
 
 
