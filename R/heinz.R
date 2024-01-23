@@ -28,10 +28,6 @@
 #'
 #' @export
 heinz = function(ig, scores, min.cluster.size = 2){
-  if(0){
-    ig = ig; scores = rwr_score; min.cluster.size = 2
-  }
-
   if(!igraph::is_igraph(ig)){
     stop("The function must apply to an 'igraph' object.\n")
   }
@@ -140,7 +136,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
       # Iteratively exclude all negative nodes of degree 1 from MST
       loop = TRUE
       while(loop){
-        neg_deg1 = V(mst)[igraph::degree(mst) == 1 & igraph::vertex_attr(mst, van) < 0]
+        neg_deg1 = V(mst)[igraph::degree(mst) == 1 & igraph::vertex_attr(mst, van) < 0] #!!!!!!!!!!!!!!!!!!!!!!!
         if(length(neg_deg1) == 0){
           loop = FALSE
         }else{

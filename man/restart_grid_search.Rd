@@ -6,6 +6,7 @@
 \usage{
 restart_grid_search(
   ig,
+  ag,
   n.adj.M,
   seeds,
   filtering_rate,
@@ -13,11 +14,14 @@ restart_grid_search(
   multiplex = FALSE,
   net.weight,
   layer.weight,
-  iteration = 1
+  iteration = 1,
+  agg.method = NULL
 )
 }
 \arguments{
 \item{ig}{Input graph}
+
+\item{ag}{Aggregated graph}
 
 \item{n.adj.M}{Normalized adjacency matrix}
 
@@ -34,6 +38,8 @@ restart_grid_search(
 \item{layer.weight}{A named list of named vectors, or NULL. Relative weight given to nodes of a layer of a component of graph, applied to seed vector in RWR. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.}
 
 \item{iteration}{Current iteration of the AMEND algorithm.}
+
+\item{agg.method}{A named list. The element 'primary' contains the name of the primary layer for a multiplex component to be used during subnetwork identification. The element 'agg.method' contains a character scalar referring to an aggregation function.}
 }
 \value{
 a list containing an igraph object, subnetwork score, and restart value
@@ -68,7 +74,7 @@ dimnames(adj_norm) = dimnames(adjm)
 seeds = runif(8)
 names(seeds) = 1:8
 
-search = AMEND:::restart_grid_search(ig = g, n.adj.M = adj_norm,
+search = AMEND:::restart_grid_search(ig = g, ag = g, n.adj.M = adj_norm,
                                      seeds = seeds, filtering_rate = 0.3)
 plot(search[[1]])
 

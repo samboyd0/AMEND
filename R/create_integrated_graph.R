@@ -1,3 +1,10 @@
+#======#
+# To-Do
+#======#
+# - Make create_integrated_graph() preserve any vertex attributes that are common to all graph inputs (or just all vertex attributes, assigning NA to nodes that don't have a value)
+# - Create biased random walk functionality where the user inputs a list of nodes of interest, and the algorithm assigns values inversely related to distance (in integrated graph) from these nodes.
+#======#
+
 #' @importFrom igraph vcount V V<- E E<- vertex_attr vertex_attr<-
 
 #' @title Create an integrated graph from a list of graph-like objects
@@ -19,7 +26,7 @@
 #' @param graph,adj_matrix,edge_list A single graph like object in the form of an igraph, adjacency matrix, or edge list. Or, a named list containing multiple graph-like objects of the same type, to be merged. The merged graph must be connected. If a third column is provided in an edge list, these are taken as edge weights. Only one of graph, adj_matrix, or edge_list should be given, with priority given to graph, then adj_matrix, then edge_list. See 'Details' for correct naming conventions.
 #' @param data A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, or a character string (denoting a vertex attribute of the input igraph object) containing the experimental data from which seed values for RWR will be derived according to _FUN_ and _FUN.params_ args. See 'Details' for correct naming conventions.
 #' @param node_type A named list of character vectors (list elements correspond to graph components), a named character vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. The list elements represent sets of nodes that belong to the corresponding components. The character vector contains _component_layer_ tags for the node name given in names of vector. If NULL and multiplex and/or heterogeneous, node labels must follow 'name|type_layer' naming scheme (e.g., MYC|gene_1). See 'Details' for correct naming conventions.
-#' @param brw.attr A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values. Should be non-negative, with values greater (lesser) than 1 increasing (decreasing) transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. See 'Details' for biased random walk info.
+#' @param brw.attr A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values. Should be non-negative, with larger values increasing the transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. See 'Details' for biased random walk info.
 #' @param FUN A function, named list of functions, named list of character strings, a single character string, or NULL. Function for transforming values in _data_ to derive seed values for RWR. Names correspond to graph components. Character strings should correspond to a default function: one of 'binary', 'shift_scale', 'p_value', or 'exp'. NULL means no transformation is done to values in _data_. See 'Details' for descriptions of default functions.
 #' @param FUN.params A named list of lists of named function arguments, a named list of named function arguments, or NULL. Function arguments to be passed to _FUN_. Names should match names in _FUN_.
 #' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and node_type must be included as an argument or graph vertex attribute.
@@ -292,8 +299,8 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
           for(i in seq_along(nm)){
             t = names(node_type)[unlist(lapply(node_type, function(x) nm[i] %in% x))]
             if(length(t) == 0) t = "_" # stop("node_type does not contain all nodes in graph.")
-            if(length(t) > 1) if(!(all(n.char(t, "_") == 1) && length(unique(extract_string(t, "_", before=T))) == 1 && length(unique(extract_string(t, "_", before=F))) == length(t))) stop("Some nodes map to multiple node types.")
-            t = extract_string(t, "_", before=T)[1]
+            if(length(t) > 1) if(!(all(n.char(t, "_") == 1) && length(unique(extract_string(t, "_", pos=1))) == 1 && length(unique(extract_string(t, "_", pos=2))) == length(t))) stop("Some nodes map to multiple node types.")
+            t = extract_string(t, "_", pos=1)[1]
             tmp[i] = t
           }
           V(graph)$name[no.type.id] = paste(nm, tmp, sep = "|")
@@ -318,7 +325,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
 
   uniq.types = unique(V(graph)$node_type)
   is.multi = any(grepl("_", uniq.types))
-  is.hetero = length(unique(extract_string(uniq.types, "_", before = TRUE))) > 1
+  is.hetero = length(unique(extract_string(uniq.types, "_", pos=1))) > 1
 
   if(multiplex && !is.multi) stop("multiplex=TRUE but no multiplex layers found. See function documentation for the correct node type naming conventions.")
   if(heterogeneous && !is.hetero) stop("heterogeneous=TRUE but only one unique node type found. See function documentation for the correct node type naming conventions.")
@@ -329,7 +336,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
   ### Multiplex or Heterogeneous
   if(multiplex || heterogeneous){
     if(multiplex){
-      multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", before=T)) # NULL if no '_
+      multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", pos=1)) # NULL if no '_
       bp.nm = uniq.types[uniq.types %in% multiplex.comps & !grepl("_", uniq.types)]
     }else{
       bp.nm = NULL
@@ -341,22 +348,22 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
       if(!data.name %in% igraph::vertex_attr_names(graph)) stop(paste0("No vertex attribute '", data.name,"' found."))
     }else if(is.list(data) && !is.null(names(data))){ # Map list values to graph
       for(i in seq_along(non.bp.nm)){
-        if(!non.bp.nm[i] %in% names(data) && !extract_string(non.bp.nm[i], "_", before=T) %in% names(data)) stop("Node types don't match with names of 'data'.")
-        if(grepl("_", non.bp.nm[i]) && non.bp.nm[i] %in% names(data) && extract_string(non.bp.nm[i], "_", before=T) %in% names(data)) stop("Incorrect labeling for 'data'. See function documentation for correct naming conventions.")
+        if(!non.bp.nm[i] %in% names(data) && !extract_string(non.bp.nm[i], "_", pos=1) %in% names(data)) stop("Node types don't match with names of 'data'.")
+        if(grepl("_", non.bp.nm[i]) && non.bp.nm[i] %in% names(data) && extract_string(non.bp.nm[i], "_", pos=1) %in% names(data)) stop("Incorrect labeling for 'data'. See function documentation for correct naming conventions.")
         t = V(graph)$node_type == non.bp.nm[i]
         if(non.bp.nm[i] %in% names(data)){
-          ind = match(extract_string(V(graph)$name, "\\|", before=T), names(data[[match(non.bp.nm[i], names(data))]]))
+          ind = match(extract_string(V(graph)$name, "\\|", pos=1), names(data[[match(non.bp.nm[i], names(data))]]))
           igraph::vertex_attr(graph, data.name, which(!is.na(ind))) = unname(data[[match(non.bp.nm[i], names(data))]][ind[!is.na(ind)]])
-          if(any(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T)))) warning(paste0(sum(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T))), " of node type ", non.bp.nm[i], " didn't map to 'data'. These will be given seed values of 0."))
-        }else if(!non.bp.nm[i] %in% names(data) && extract_string(non.bp.nm[i], "_", before=T) %in% names(data)){
-          ind = match(extract_string(V(graph)$name, "\\|", before=T), names(data[[match(extract_string(non.bp.nm[i], "_", before=T), names(data))]]))
+          if(any(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1)))) warning(paste0(sum(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1))), " of node type ", non.bp.nm[i], " didn't map to 'data'. These will be given seed values of 0."))
+        }else if(!non.bp.nm[i] %in% names(data) && extract_string(non.bp.nm[i], "_", pos=1) %in% names(data)){
+          ind = match(extract_string(V(graph)$name, "\\|", pos=1), names(data[[match(extract_string(non.bp.nm[i], "_", pos=1), names(data))]]))
           ind[V(graph)$node_type != non.bp.nm[i]] = NA
-          igraph::vertex_attr(graph, data.name, which(!is.na(ind))) = unname(data[[which(names(data) == extract_string(non.bp.nm[i], "_", before=T))]][ind[!is.na(ind)]])
-          if(any(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T)))) warning(paste0(sum(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T))), " of node type ", non.bp.nm[i], " didn't map to 'data'. These will be given seed values of 0."))
+          igraph::vertex_attr(graph, data.name, which(!is.na(ind))) = unname(data[[which(names(data) == extract_string(non.bp.nm[i], "_", pos=1))]][ind[!is.na(ind)]])
+          if(any(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1)))) warning(paste0(sum(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1))), " of node type ", non.bp.nm[i], " didn't map to 'data'. These will be given seed values of 0."))
         }else stop("Incorrect labeling for 'data'. See function documentation for correct naming conventions.")
       }
     }else if(is.numeric(data) && !is.null(names(data))){ # Map same values to same node across different layers. NAs for nodes that don't match (turn to 0s for seed & Z)
-      ind = match(extract_string(V(graph)$name, "\\|", before=T), names(data))
+      ind = match(extract_string(V(graph)$name, "\\|", pos=1), names(data))
       if(any(is.na(ind))) warning(paste0(sum(is.na(ind)), " nodes didn't map to 'data'. These will be given seed values of 0."))
       igraph::vertex_attr(graph, data.name, which(!is.na(ind))) = unname(data[ind[!is.na(ind)]])
     }else stop("Incorrect input for 'data'.")
@@ -366,22 +373,22 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
       if(!brw.attr.nm %in% igraph::vertex_attr_names(graph)) stop(paste0("No vertex attribute '", brw.attr.nm,"' found."))
     }else if(is.list(brw.attr) && !is.null(names(brw.attr))){ # Map list values to graph
       for(i in seq_along(non.bp.nm)){
-        if(!non.bp.nm[i] %in% names(brw.attr) && !extract_string(non.bp.nm[i], "_", before=T) %in% names(brw.attr)) stop("Node types don't match with names of 'brw.attr'.")
-        if(grepl("_", non.bp.nm[i]) && non.bp.nm[i] %in% names(brw.attr) && extract_string(non.bp.nm[i], "_", before=T) %in% names(brw.attr)) stop("Incorrect labeling for 'brw.attr'. See function documentation for correct naming conventions.")
+        if(!non.bp.nm[i] %in% names(brw.attr) && !extract_string(non.bp.nm[i], "_", pos=1) %in% names(brw.attr)) stop("Node types don't match with names of 'brw.attr'.")
+        if(grepl("_", non.bp.nm[i]) && non.bp.nm[i] %in% names(brw.attr) && extract_string(non.bp.nm[i], "_", pos=1) %in% names(brw.attr)) stop("Incorrect labeling for 'brw.attr'. See function documentation for correct naming conventions.")
         if(non.bp.nm[i] %in% names(brw.attr)){
-          ind = match(extract_string(V(graph)$name, "\\|", before=T), names(brw.attr[[match(non.bp.nm[i], names(brw.attr))]]))
+          ind = match(extract_string(V(graph)$name, "\\|", pos=1), names(brw.attr[[match(non.bp.nm[i], names(brw.attr))]]))
           igraph::vertex_attr(graph, brw.attr.nm, which(!is.na(ind))) = unname(brw.attr[[match(non.bp.nm[i], names(brw.attr))]][ind[!is.na(ind)]])
-          if(any(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T)))) warning(paste0(sum(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T))), " of node type ", non.bp.nm[i], " didn't map to 'brw.attr'. These will be given values of 1."))
-        }else if(!non.bp.nm[i] %in% names(brw.attr) && extract_string(non.bp.nm[i], "_", before=T) %in% names(brw.attr)){
-          ind = match(extract_string(V(graph)$name, "\\|", before=T), names(brw.attr[[match(extract_string(non.bp.nm[i], "_", before=T), names(brw.attr))]]))
+          if(any(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1)))) warning(paste0(sum(is.na(ind) & V(graph)$node_type %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1))), " of node type ", non.bp.nm[i], " didn't map to 'brw.attr'. These will be given values of 1."))
+        }else if(!non.bp.nm[i] %in% names(brw.attr) && extract_string(non.bp.nm[i], "_", pos=1) %in% names(brw.attr)){
+          ind = match(extract_string(V(graph)$name, "\\|", pos=1), names(brw.attr[[match(extract_string(non.bp.nm[i], "_", pos=1), names(brw.attr))]]))
           ind[V(graph)$node_type != non.bp.nm[i]] = NA
-          igraph::vertex_attr(graph, brw.attr.nm, which(!is.na(ind))) = unname(brw.attr[[which(names(brw.attr) == extract_string(non.bp.nm[i], "_", before=T))]][ind[!is.na(ind)]])
-          if(any(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T)))) warning(paste0(sum(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", before=T))), " of node type ", non.bp.nm[i], " didn't map to 'brw.attr'. These will be given values of 1."))
+          igraph::vertex_attr(graph, brw.attr.nm, which(!is.na(ind))) = unname(brw.attr[[which(names(brw.attr) == extract_string(non.bp.nm[i], "_", pos=1))]][ind[!is.na(ind)]])
+          if(any(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1)))) warning(paste0(sum(is.na(ind[V(graph)$node_type == non.bp.nm[i]]) & V(graph)$node_type[V(graph)$node_type == non.bp.nm[i]] %in% c(non.bp.nm[i], extract_string(non.bp.nm[i], "_", pos=1))), " of node type ", non.bp.nm[i], " didn't map to 'brw.attr'. These will be given values of 1."))
         }else stop("Incorrect labeling for 'brw.attr'. See function documentation for correct naming conventions.")
       }
       igraph::vertex_attr(graph, brw.attr.nm, which(is.na(igraph::vertex_attr(graph, brw.attr.nm)))) = 1
     }else if(is.numeric(brw.attr) && !is.null(names(brw.attr))){ # Map same values to same node across different layers. NAs for nodes that don't match (turn to 0s for seed & Z)
-      ind = match(extract_string(V(graph)$name, "\\|", before=T), names(brw.attr))
+      ind = match(extract_string(V(graph)$name, "\\|", pos=1), names(brw.attr))
       if(any(is.na(ind))) warning(paste0(sum(is.na(ind)), " nodes didn't map to 'brw.attr'. These will be given values of 1 (unbiased RW)."))
       igraph::vertex_attr(graph, brw.attr.nm, which(!is.na(ind))) = brw.attr[ind[!is.na(ind)]]
       igraph::vertex_attr(graph, brw.attr.nm, which(is.na(igraph::vertex_attr(graph, brw.attr.nm)))) = 1
@@ -431,7 +438,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
       dat = igraph::vertex_attr(graph, data.name, ids)
       # Mapping graph name to FUN (if it is a named list of lists)
       if(fun.map){
-        new.nm = ifelse(!non.bp.nm[i] %in% names(FUN), extract_string(non.bp.nm[i], "_", TRUE), non.bp.nm[i])
+        new.nm = ifelse(!non.bp.nm[i] %in% names(FUN), extract_string(non.bp.nm[i], "_", pos=1), non.bp.nm[i])
         id.f = which(names(FUN) %in% new.nm)
         if(length(id.f) == 0){ # If graph doesn't map to any name in FUN
           warning("graph doesn't map to any name of 'FUN'. Not applying any function.")
@@ -440,7 +447,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
       }else use.f = FUN
       # Mapping graph name to FUN.params (if it is a named list of lists or of function args)
       if(fp.map){
-        new.nm = ifelse(!non.bp.nm[i] %in% names(FUN.params), extract_string(non.bp.nm[i], "_", TRUE), non.bp.nm[i])
+        new.nm = ifelse(!non.bp.nm[i] %in% names(FUN.params), extract_string(non.bp.nm[i], "_", pos=1), non.bp.nm[i])
         id.fp = which(names(FUN.params) %in% new.nm)
         if(length(id.fp) == 0){ # If graph doesn't map to any name in FUN.params
           use.fp = NULL
@@ -463,8 +470,8 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
     if(length(data) == 1 && is.character(data)){
       if(!data %in% igraph::vertex_attr_names(graph)) stop(paste0("No vertex attribute \'", data, "\' in graph."))
     }else if(is.numeric(data) && !is.null(names(data))){
-      if(any(!extract_string(v.nm, "\\|", before=T) %in% names(data))) warning(paste0(sum(!extract_string(v.nm, "\\|", before=T) %in% names(data)), " nodes didn't map to 'data'. Unmapped nodes will be given seed values of 0."))
-      ind = match(names(data), extract_string(v.nm, "\\|", before=T))
+      if(any(!extract_string(v.nm, "\\|", pos=1) %in% names(data))) warning(paste0(sum(!extract_string(v.nm, "\\|", pos=1) %in% names(data)), " nodes didn't map to 'data'. Unmapped nodes will be given seed values of 0."))
+      ind = match(names(data), extract_string(v.nm, "\\|", pos=1))
       vertex_attr(graph, data.name, ind[!is.na(ind)]) = data[!is.na(ind)]
     }else stop("Incorrect input for 'data'.")
     # Check brw.attr argument
@@ -476,8 +483,8 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
         igraph::vertex_attr(graph, brw.attr.nm) = 1
       }
     }else if(is.numeric(brw.attr) && !is.null(names(brw.attr))){
-      if(any(!extract_string(v.nm, "\\|", before=T) %in% names(brw.attr))) warning(paste0(sum(!extract_string(v.nm, "\\|", before=T) %in% names(brw.attr)), " nodes didn't map to 'brw.attr'. Unmapped nodes will be given seed values of 0."))
-      ind = match(names(brw.attr), extract_string(v.nm, "\\|", before=T))
+      if(any(!extract_string(v.nm, "\\|", pos=1) %in% names(brw.attr))) warning(paste0(sum(!extract_string(v.nm, "\\|", pos=1) %in% names(brw.attr)), " nodes didn't map to 'brw.attr'. Unmapped nodes will be given seed values of 0."))
+      ind = match(names(brw.attr), extract_string(v.nm, "\\|", pos=1))
       vertex_attr(graph, brw.attr.nm, ind[!is.na(ind)]) = brw.attr[!is.na(ind)]
     }else stop("Incorrect input for 'brw.attr'.")
 
@@ -636,7 +643,7 @@ largest_connected_component = function(g){
 #' @returns A list of fused multiplex components
 #'
 create_multiplex = function(adj_matrix, multiplex.comps, data.type, brw.attr.nm){
-  type.tmp = extract_string(names(adj_matrix), "_", before=T)
+  type.tmp = extract_string(names(adj_matrix), "_", pos=1)
   multiplex.combined = vector("list", length(multiplex.comps)); names(multiplex.combined) = multiplex.comps
   for(i in seq_along(multiplex.combined)){
     # Identify IDs of layers
@@ -647,8 +654,8 @@ create_multiplex = function(adj_matrix, multiplex.comps, data.type, brw.attr.nm)
     for(j in 2:L){
       for(ii in 1:(j-1)){
         # Construct inter-layer adj mat between layer j and layer ii
-        col.nm = extract_string(colnames(layer.adjmat[[ii]])[Matrix::colSums(layer.adjmat[[ii]]) != 0], "\\|", before=T)
-        row.nm = extract_string(rownames(layer.adjmat[[j]])[Matrix::rowSums(layer.adjmat[[j]]) != 0], "\\|", before=T)
+        col.nm = extract_string(colnames(layer.adjmat[[ii]])[Matrix::colSums(layer.adjmat[[ii]]) != 0], "\\|", pos=1)
+        row.nm = extract_string(rownames(layer.adjmat[[j]])[Matrix::rowSums(layer.adjmat[[j]]) != 0], "\\|", pos=1)
         common = intersect(col.nm, row.nm)
         col.ids = match(paste(common, names(layer.adjmat)[ii], sep = "|"), colnames(layer.adjmat[[ii]]))
         row.ids = match(paste(common, names(layer.adjmat)[j], sep = "|"), rownames(layer.adjmat[[j]]))
@@ -680,7 +687,7 @@ create_multiplex = function(adj_matrix, multiplex.comps, data.type, brw.attr.nm)
     }
 
     # Add node_type to multiplex graph
-    V(multiplex.graph)$node_type = extract_string(V(multiplex.graph)$name, "\\|", before=F)
+    V(multiplex.graph)$node_type = extract_string(V(multiplex.graph)$name, "\\|", pos=2)
 
     multiplex.combined[[i]] = list(g = multiplex.graph, adj = new.mat)
   } # End For loop over 'multiplex.comps'
@@ -701,11 +708,11 @@ create_multiplex = function(adj_matrix, multiplex.comps, data.type, brw.attr.nm)
 #' @returns a matrix
 #'
 transform_bipartite = function(col.mat, row.mat, bp.mat){
-  r.t = extract_string(rownames(row.mat)[1], "\\|", F)
-  c.t = extract_string(rownames(col.mat)[1], "\\|", F)
+  r.t = extract_string(rownames(row.mat)[1], "\\|", pos=2)
+  c.t = extract_string(rownames(col.mat)[1], "\\|", pos=2)
 
-  col.nm = extract_string(colnames(col.mat), "\\|", before=T)
-  row.nm = extract_string(rownames(row.mat), "\\|", before=T)
+  col.nm = extract_string(colnames(col.mat), "\\|", pos=1)
+  row.nm = extract_string(rownames(row.mat), "\\|", pos=1)
 
   if(all(grepl("\\|", rownames(bp.mat)))) rownames(bp.mat) = get.type(rownames(bp.mat),1)
   bp.row.nm = rownames(bp.mat)
@@ -742,8 +749,8 @@ transform_bipartite = function(col.mat, row.mat, bp.mat){
 #' @returns matrix
 #'
 get_layer = function(x, l){
-  t1 = extract_string(rownames(x), "\\|", F)
-  t2 = extract_string(t1, "_", F)
+  t1 = extract_string(rownames(x), "\\|", pos=2)
+  t2 = extract_string(t1, "_", pos=2)
   if(any(is.na(t2))){ # If there is nothing after "_", implying that this is a monoplex
     id = 1:length(t2)
   }else id = which(t2 == unique(t2)[l]) # layer l is the lth to appear in adjacency matrix
@@ -878,22 +885,22 @@ list_input_checks = function(nn, multiplex, heterogeneous){
       for(i in seq_along(nn)){ # For each input graph element
         if(!grepl(";", names(nn)[i])){ # If element i is not bipartite
           if(n.char(names(nn)[i], "_") == 1){ # If element i is a layer
-            if(all(n.char(nn[[i]], "\\|") == 1) && length(unique(extract_string(nn[[i]], "\\|", before=F))) == 1 && unique(extract_string(nn[[i]], "\\|", before=F)) == names(nn)[i]){
+            if(all(n.char(nn[[i]], "\\|") == 1) && length(unique(extract_string(nn[[i]], "\\|", pos=2))) == 1 && unique(extract_string(nn[[i]], "\\|", pos=2)) == names(nn)[i]){
               # GOOD. All names should be appended with '|component_layer'. Node names should not contain '|' apart from the delimiter. Appendage should match component name.
             }else if(all(!grepl("\\|", nn[[i]]))){ # If the labels don't include '|component_layer', add it.
               nn[[i]] = paste(nn[[i]], names(nn)[i], sep = "|")
             }else stop(error.message)
           }else if(n.char(names(nn)[i], "_") == 0){ # If element i is not explicitly labeled as multiplex
             if(all(n.char(nn[[i]], "\\|") == 1)){ # All labels contain '|'
-              if(!(all(n.char(nn[[i]], "_") == 1) && length(unique(extract_string(extract_string(nn[[i]], "\\|", before=F), "_", before=T))) == 1 && unique(extract_string(extract_string(nn[[i]], "\\|", before=F), "_", before=T)) == names(nn)[i])){
+              if(!(all(n.char(nn[[i]], "_") == 1) && length(unique(extract_string(extract_string(nn[[i]], "\\|", pos=2), "_", pos=1))) == 1 && unique(extract_string(extract_string(nn[[i]], "\\|", pos=2), "_", pos=1)) == names(nn)[i])){
                 stop(error.message)
               }
             }else stop(error.message)
           }else stop(error.message)
         }else{ # if ';' is present, representing separate layers of multiplex
           tmp.nm = unlist(strsplit(names(nn)[i], ";"))
-          if(!(all(n.char(tmp.nm, "_") == 1) && length(unique(extract_string(tmp.nm, "_", before=T))) == 1 && length(unique(tmp.nm)) == length(tmp.nm))) stop(error.message)
-          if(!(all(n.char(nn[[i]], "\\|") == 1) && all(extract_string(nn[[i]], "\\|", before=F) %in% tmp.nm))) stop(error.message)
+          if(!(all(n.char(tmp.nm, "_") == 1) && length(unique(extract_string(tmp.nm, "_", pos=1))) == 1 && length(unique(tmp.nm)) == length(tmp.nm))) stop(error.message)
+          if(!(all(n.char(nn[[i]], "\\|") == 1) && all(extract_string(nn[[i]], "\\|", pos=2) %in% tmp.nm))) stop(error.message)
         }
       }
 
@@ -903,14 +910,14 @@ list_input_checks = function(nn, multiplex, heterogeneous){
         if(!grepl(";", names(nn)[i])){ # If its mono/multiplex, not bipartite
 
           if(n.char(names(nn)[i], "_") == 1){ ## If one '_' is present, representing multiplex layer
-            if(all(n.char(nn[[i]], "\\|") == 1) && length(unique(extract_string(nn[[i]], "\\|", before=F))) == 1 && unique(extract_string(nn[[i]], "\\|", before=F)) == names(nn)[i]){
+            if(all(n.char(nn[[i]], "\\|") == 1) && length(unique(extract_string(nn[[i]], "\\|", pos=2))) == 1 && unique(extract_string(nn[[i]], "\\|", pos=2)) == names(nn)[i]){
               # GOOD. If they all have one '|', with one unique name after '|', and this unique name matches the name of the list.
             }else if(all(!grepl("\\|", nn[[i]]))){ # If no node name has a '|'
               nn[[i]] = paste(nn[[i]], names(nn)[i], sep = "|")
             }else stop(error.message)
           }else if(n.char(names(nn)[i], "_") == 0){ ## Else if NO '_' are present
             if(all(n.char(nn[[i]], "\\|") == 1)){
-              if((all(n.char(nn[[i]], "_") == 1) || all(n.char(nn[[i]], "_") == 0)) && length(unique(extract_string(extract_string(nn[[i]], "\\|", before=F), "_", before=T))) == 1 && unique(extract_string(extract_string(nn[[i]], "\\|", before=F), "_", before=T)) == names(nn)[i]){
+              if((all(n.char(nn[[i]], "_") == 1) || all(n.char(nn[[i]], "_") == 0)) && length(unique(extract_string(extract_string(nn[[i]], "\\|", pos=2), "_", pos=1))) == 1 && unique(extract_string(extract_string(nn[[i]], "\\|", pos=2), "_", pos=1)) == names(nn)[i]){
                 # GOOD
               }else stop(error.message)
             }else if(all(!grepl("\\|", nn[[i]]))){ # If there is no "|" in any node name
@@ -925,15 +932,15 @@ list_input_checks = function(nn, multiplex, heterogeneous){
             if(all(n.char(tmp.nm, "_") %in% c(1,0))){ # There can be at most one '_' per 'component_layer' term in list name
               multi.nm = tmp.nm[grep("_", tmp.nm)] # Names that contain '_'
               if(!all(n.char(nn[[i]], "\\|") %in% c(1,0))) stop(error.message) # There can be at most one '|' per node name, following the 'name' or 'name|component_layer' labeling format.
-              if(!all(extract_string(nn[[i]][grep("\\|", nn[[i]])], "\\|", before=F) %in% tmp.nm)) stop(error.message) # All components given in 'component_layer' must be in bipartite name of graph list input (with different components separated by ';')
-              if(!all(tmp.nm %in% extract_string(nn[[i]][grep("\\|", nn[[i]])], "\\|", before=F))) warning("Some node types designated in list names aren't present.") # All component_layers given in list name must be present in node labels, following 'name|component_layer' format.
+              if(!all(extract_string(nn[[i]][grep("\\|", nn[[i]])], "\\|", pos=2) %in% tmp.nm)) stop(error.message) # All components given in 'component_layer' must be in bipartite name of graph list input (with different components separated by ';')
+              if(!all(tmp.nm %in% extract_string(nn[[i]][grep("\\|", nn[[i]])], "\\|", pos=2))) warning("Some node types designated in list names aren't present.") # All component_layers given in list name must be present in node labels, following 'name|component_layer' format.
             }else stop(error.message)
           }else{
             if(!(all(n.char(nn[[i]], "\\|") %in% c(1,0)))) stop(error.message) # There can be at most one '|' per node name, following the 'name' or 'name|component_layer' labeling format.
             id = grep("\\|", nn[[i]]) # ids of node labels with '|'
-            tl = extract_string(nn[[i]][id], "\\|", before=FALSE) # Get the ''component_layer' info from these node labels
+            tl = extract_string(nn[[i]][id], "\\|", pos=2) # Get the ''component_layer' info from these node labels
             # IF these are not all in list name AND not all component (not layer) info from node labels is present in list name, THEN error
-            if(!all(tl %in% tmp.nm) && !all(extract_string(tl, "_", before=TRUE) %in% tmp.nm)) stop(error.message)
+            if(!all(tl %in% tmp.nm) && !all(extract_string(tl, "_", pos=1) %in% tmp.nm)) stop(error.message)
             # Scenario 1: all(component_layer %in% tmp.nm) = TRUE, all(component %in% tmp.nm) = FALSE
             #   If a node has component_layer info, and that is reflected in list name, that is sufficient. This is OK.
             # Scenario 2: all(component_layer %in% tmp.nm) = FALSE, all(component %in% tmp.nm) = TRUE
@@ -1019,11 +1026,11 @@ graph_checks = function(x){
   if("node_type" %in% igraph::vertex_attr_names(x)){
     id = grep("\\|", nm)
     if(length(id) != 0){
-      if(any(n.char(nm[id], "\\|") != 1) || any(extract_string(nm[id], "\\|", before=FALSE) != V(x)$node_type[id])){
+      if(any(n.char(nm[id], "\\|") != 1) || any(extract_string(nm[id], "\\|", pos=2) != V(x)$node_type[id])){
         stop("Incorrect node labels. See function documentation for correct naming conventions.")
       } #else warning("")
     }
-    V(x)$name = paste(extract_string(nm, "\\|", before=TRUE), V(x)$node_type, sep = "|")
+    V(x)$name = paste(extract_string(nm, "\\|", pos=1), V(x)$node_type, sep = "|")
   }
   if(length(unique(V(x)$name)) < igraph::vcount(x)) stop("Not all node name/type combinations are unique.")
   x
@@ -1035,11 +1042,15 @@ graph_checks = function(x){
 #' @description
 #' Melting a graph is finding nodes with the same node name and fusing them together so that there is just one node that is adjacent to all of the edges.
 #'
+#' @details
+#' Fuses any nodes with same node name together, conserving any vertex attributes that may be present.
+#'
 #' @param g igraph
+#' @param agg.method A function or NULL. The aggregation method for vertex attributes. Default NULL takes the first value.
 #'
 #' @returns igraph with vertex attributes preserved.
 #'
-melt_graph = function(g){ # Fuses any nodes with same node name together, conserving any vertex attributes that may be present. Takes first vattr value if there are duplicates.
+melt_graph = function(g, agg.method = NULL){
   ## Collect any vertex attributes from graphs
   v.attrs = igraph::vertex_attr_names(g)
   if(length(v.attrs) != 0){
@@ -1056,11 +1067,26 @@ melt_graph = function(g){ # Fuses any nodes with same node name together, conser
   graph = igraph::graph_from_edgelist(el = edge_list[,1:2], directed = FALSE)
   igraph::E(graph)$weight = as.numeric(edge_list[,3])
   graph = igraph::simplify(graph = graph, remove.multiple = TRUE, remove.loops = TRUE, edge.attr.comb = "median")
-  if(length(v.attrs) != 0){ # Redistribute the vertex attributes to the integrated graph
-    for(i in seq_along(v.attrs)){
-      igraph::vertex_attr(graph, v.attrs[i]) = unname(tmp.scores[[i]][match(V(graph)$name, names(tmp.scores[[i]]))])
-      # Switch NAs to zero
-      # igraph::vertex_attr(graph, v.attrs[i], which(is.na(igraph::vertex_attr(graph, v.attrs[i])))) = 0
+  if(length(v.attrs) != 0){
+    # Redistribute the vertex attributes to the integrated graph. Takes the first vertex attribute value for nodes with multiple values.
+    if(is.null(agg.method)){
+      for(i in seq_along(v.attrs)){
+        igraph::vertex_attr(graph, v.attrs[i]) = unname(tmp.scores[[i]][match(V(graph)$name, names(tmp.scores[[i]]))])
+        # Switch NAs to zero
+        # igraph::vertex_attr(graph, v.attrs[i], which(is.na(igraph::vertex_attr(graph, v.attrs[i])))) = 0
+      }
+    }else{
+      # Get aggregation function
+      agg.fun = get_aggregate_method(x = agg.method)
+      for(i in seq_along(v.attrs)){
+        if(is.numeric(tmp.scores[[i]])){
+          if(any(tmp.scores[[i]] < 0) && agg.method %in% c("gmean", "hmean")) agg.fun.tmp = mean else agg.fun.tmp = agg.fun
+          tmp = stats::aggregate(x = tmp.scores[[i]], by = list(names(tmp.scores[[i]])), FUN = agg.fun.tmp)
+          igraph::vertex_attr(graph, v.attrs[i]) = tmp$x[match(V(graph)$name, tmp$Group.1)]
+        }else{ # If non-numeric, take the first value
+          igraph::vertex_attr(graph, v.attrs[i]) = unname(tmp.scores[[i]][match(V(graph)$name, names(tmp.scores[[i]]))])
+        }
+      }
     }
   }
   graph

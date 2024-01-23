@@ -78,7 +78,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     adj.comps = mono.norm
 
     # Normalize off-diagonal sub-matrices (and sub-sub matrices), then combine adjacency matrices
-    uniq.types = unique(extract_string(node_type, "_", before=T))
+    uniq.types = unique(extract_string(node_type, "_", pos=1))
     new.mat = adj.comps[[1]]
     for(i in 2:length(uniq.types)){ # Outside (row)
       for(j in 1:(i-1)){ # Inside (col)
@@ -130,7 +130,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     for(j in seq_len(ncol(new.mat))){
       x.ids = (new.mat@p[j] + 1):new.mat@p[j+1]
       r.ids = new.mat@i[x.ids] + 1 # row ids of non-zero elements in column j
-      nnt = extract_string(unique(ntl[r.ids][nt[r.ids] != nt[j]]), "_", before=T)
+      nnt = extract_string(unique(ntl[r.ids][nt[r.ids] != nt[j]]), "_", pos=1)
       nL = table(nnt) # number of layers
       ntc = length(nL) # Number of other node type connections for node j
       current = nt[j] # current node type
@@ -144,7 +144,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     # Normalize multiplex components
     ## Get Multiplex components as a list of adjacency matrices
     uniq.types = unique(node_type)
-    multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", before=T))
+    multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", pos=1))
     id = which(get.type(rownames(adjM), 3) %in% multiplex.comps)
     multi.adj = adjM[id,id]
 
@@ -191,7 +191,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     # Normalize multiplex components
     ## Get Multiplex components as a list of adjacency matrices
     uniq.types = unique(node_type)
-    multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", before=T))
+    multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", pos=1))
     multi.adj = vector("list", length(multiplex.comps)); names(multi.adj) = multiplex.comps
     for(i in seq_along(multi.adj)){
       id = which(get.type(rownames(adjM), 3) %in% multiplex.comps[i])
@@ -260,7 +260,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     }else adj.comps = multi.norm
 
     # Normalize off-diagonal sub-matrices (and sub-sub matrices), then combine adjacency matrices
-    uniq.types = unique(extract_string(node_type, "_", before=T))
+    uniq.types = unique(extract_string(node_type, "_", pos=1))
     new.mat = adj.comps[[1]]
     for(i in 2:length(uniq.types)){ # Outside (row)
       for(j in 1:(i-1)){ # Inside (col)
@@ -311,7 +311,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     for(j in seq_len(ncol(new.mat))){
       x.ids = (new.mat@p[j] + 1):new.mat@p[j+1]
       r.ids = new.mat@i[x.ids] + 1 # row ids of non-zero elements in column j (neighbor's of j)
-      ont = extract_string(unique(ntl[r.ids][nt[r.ids] != nt[j]]), "_", before=T) # (e.g., 'prot', 'prot', 'gene', ...)
+      ont = extract_string(unique(ntl[r.ids][nt[r.ids] != nt[j]]), "_", pos=1) # (e.g., 'prot', 'prot', 'gene', ...)
       nL = table(ont) # number of layers of each other component that node j is connected to
       ntc = length(nL) # Number of connections with other node types for node j
       current = nt[j] # current node type
@@ -402,12 +402,12 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
       p0 = numeric(length(node_type))
       for(i in seq_along(layers)){
         id = which(node_type == layers[i])
-        if(grepl("_", layers[i])) tmp = layer.weight[[extract_string(layers[i], "_", before=T)]][layers[i]] else tmp = 1
+        if(grepl("_", layers[i])) tmp = layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]] else tmp = 1
         p0[id] = sum2one(data[id,]) * tmp
       }
-      nt = unique(extract_string(layers, "_", before=T))
+      nt = unique(extract_string(layers, "_", pos=1))
       for(i in seq_along(nt)){
-        id = which(extract_string(node_type, "_", before=T) == nt[i])
+        id = which(extract_string(node_type, "_", pos=1) == nt[i])
         p0[id] = p0[id] * net.weight[nt[i]]
       }
       P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
@@ -426,7 +426,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
       p0 = numeric(length(node_type))
       for(i in seq_along(layers)){
         id = which(node_type == layers[i])
-        p0[id] = sum2one(data[id,]) * layer.weight[[extract_string(layers[i], "_", before=T)]][layers[i]]
+        p0[id] = sum2one(data[id,]) * layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]]
       }
       P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
     }

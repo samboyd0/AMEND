@@ -5,12 +5,11 @@
 #'
 #' @param x vector of character strings
 #' @param k Pattern to split on
-#' @param before Return everything before the split or after the split?
+#' @param pos position of the vector to return after split
 #'
 #' @returns character string
 #'
-extract_string = function(x, k, before = T) unlist(lapply(strsplit(x, k), function(y) y[ifelse(before,1,2)]))
-# extract_string = function(x, k, pos) unlist(lapply(strsplit(x, k), function(y) y[pos]))
+extract_string = function(x, k, pos) unlist(lapply(strsplit(x, k), function(y) y[pos]))
 
 #' @title Get network location info from node labels
 #'
@@ -26,20 +25,16 @@ extract_string = function(x, k, before = T) unlist(lapply(strsplit(x, k), functi
 #'
 get.type = function(x, mode){
   if(mode == 1){ # get node name
-    t = extract_string(x, "\\|", before=TRUE)
-    # t = extract_string(x, "\\|", pos = 1)
+    t = extract_string(x, "\\|", pos=1)
   }
   if(mode == 2){ # get node component_layer
-    t = extract_string(x, "\\|", before=FALSE)
-    # t = extract_string(x, "\\|", pos = 2)
+    t = extract_string(x, "\\|", pos=2)
   }
   if(mode == 3){ # get node component
-    t = extract_string(extract_string(x, "\\|", before=FALSE), "_", before=TRUE)
-    # t = extract_string(extract_string(x, "\\|", pos = 2), "_", pos = 1)
+    t = extract_string(extract_string(x, "\\|", pos=2), "_", pos=1)
   }
   if(mode == 4){ # get node layer
-    t = extract_string(extract_string(x, "\\|", before=FALSE), "_", before=FALSE)
-    # t = extract_string(extract_string(x, "\\|", pos = 2), "_", pos = 2)
+    t = extract_string(extract_string(x, "\\|", pos=2), "_", pos=2)
   }
   t
 }

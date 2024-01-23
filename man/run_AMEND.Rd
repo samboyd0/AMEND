@@ -16,6 +16,7 @@ run_AMEND(
   FUN.params = NULL,
   heterogeneous = FALSE,
   multiplex = FALSE,
+  aggregate.multiplex = NULL,
   normalize = c("degree", "modified_degree"),
   k = 0.5,
   jump.prob = NULL,
@@ -36,7 +37,7 @@ run_AMEND(
 
 \item{node_type}{A named list of named character vectors (list elements correspond to graph components), a named character vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Denotes the component and the multiplex layer of each node. If NULL and multiplex and/or heterogeneous, node labels must follow 'name|type_layer' naming scheme (e.g., MYC|gene_1). See 'Details' for correct naming conventions.}
 
-\item{brw.attr}{A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values. Should be non-negative, with values greater (lesser) than 1 increasing (decreasing) transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. See 'Details' for biased random walk info.}
+\item{brw.attr}{A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values. Should be non-negative, with larger values increasing the transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. See 'Details' for biased random walk info.}
 
 \item{FUN}{A function, named list of functions, named list of character strings, a single character string, or NULL. Function for transforming values in \emph{data} to derive seed values for RWR. Names correspond to graph components. Character strings should correspond to a default function: one of 'binary', 'shift_scale', 'p_value', or 'exp'. NULL means no transformation is done to values in \emph{data}. See 'Details' for descriptions of default functions.}
 
@@ -45,6 +46,8 @@ run_AMEND(
 \item{heterogeneous}{Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and \emph{node_type} must be included as an argument or graph vertex attribute.}
 
 \item{multiplex}{Logical. If true, graph is assumed to contain multiplex components.}
+
+\item{aggregate.multiplex}{A named list or NULL. The list element 'primary' contains the name of the primary layer for a multiplex component whose edges will be used during subnetwork identification. The multiplex component is collapsed onto this primary layer. The list element 'agg.method' contains a character scalar referring to an aggregation function. NULL for no aggregating.}
 
 \item{normalize}{Normalization scheme of adjacency matrix for random walk with restart}
 

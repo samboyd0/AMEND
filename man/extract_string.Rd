@@ -4,14 +4,14 @@
 \alias{extract_string}
 \title{Extract substrings before or after a delimiter}
 \usage{
-extract_string(x, k, before = T)
+extract_string(x, k, pos)
 }
 \arguments{
 \item{x}{vector of character strings}
 
 \item{k}{Pattern to split on}
 
-\item{before}{Return everything before the split or after the split?}
+\item{pos}{position of the vector to return after split}
 }
 \value{
 character string

@@ -4,14 +4,19 @@
 \alias{melt_graph}
 \title{Melt a graph}
 \usage{
-melt_graph(g)
+melt_graph(g, agg.method = NULL)
 }
 \arguments{
 \item{g}{igraph}
+
+\item{agg.method}{A function or NULL. The aggregation method for vertex attributes. Default NULL takes the first value.}
 }
 \value{
 igraph with vertex attributes preserved.
 }
 \description{
 Melting a graph is finding nodes with the same node name and fusing them together so that there is just one node that is adjacent to all of the edges.
+}
+\details{
+Fuses any nodes with same node name together, conserving any vertex attributes that may be present.
 }
