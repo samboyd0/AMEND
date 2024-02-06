@@ -9,11 +9,11 @@ create_multiplex(adj_matrix, multiplex.comps, data.type, brw.attr.nm)
 \arguments{
 \item{adj_matrix}{list of adjacency matrices.}
 
-\item{multiplex.comps}{character string of names of unique components that are multiplex.}
+\item{multiplex.comps}{character vector of names of unique components that are multiplex.}
 
-\item{data.type}{character string of names of vertex attributes to preserve}
+\item{data.type}{character vector of names of vertex attributes to preserve}
 
-\item{brw.attr.nm}{character string  of vertex attribute name for biased random walk.}
+\item{brw.attr.nm}{character scalar  of vertex attribute name for biased random walk.}
 }
 \value{
 A list of fused multiplex components

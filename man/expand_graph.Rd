@@ -15,10 +15,9 @@ expand_graph(ig, ag, control)
 }
 \value{
 igraph object
-
-Takes nodes from aggregated graph, identifies nodes that were in a collapsed multiplex component, duplicates them as necessary, and appends appropriate '|component_layer' information
-Returns an induced subgraph of ig that contains only node names matching the 'name' vertex attribute of full graph.
 }
 \description{
 Given an aggregated graph, returns its expanded counterpart, induced from the original, full graph.
+Takes nodes from aggregated graph, identifies nodes that were in a collapsed multiplex component, duplicates them as necessary, and appends appropriate '|component_layer' information.
+Returns an induced subgraph of ig that contains only node names matching nodes of aggregated graph.
 }

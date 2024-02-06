@@ -1,8 +1,7 @@
 #=======#
 # To-Do:
-#   - Update vignette (12/21/23)
-#   - Upload to Github (12/21/23)
 #   - Create tests using testthat framework from R Packages by Hadley Wickham (12/27/23)
+#   - Update functions documentation to describe the process of multiplex layer aggregation and the new biased random walk/nodes of interest functionality (1/29/24)
 #=======#
 
 #' @importFrom igraph vcount V V<- E E<- vertex_attr vertex_attr<-
@@ -23,22 +22,24 @@
 #'
 #' See `create_integrated_graph()` details for proper naming conventions for node labels and function arguments when input network is multiplex and/or heterogeneous.
 #'
-#' _FUN_ and _FUN.params_ are used to calculate seed values (which must be non-negative) from the values in _data_ for use in `RWR()`. There are default functions you can specify using character strings. For NULL, no transformation is done. 'binary' assumes that all values in _data_ are 0 or 1 so no transformation is done. 'shift_scale' is for data types with a range centered about zero and takes two parameters: _DOI_ (direction of interest: 1 for positive, -1 for negative, and 0 for both) and _w_ (numeric value between 0 and 1). It takes the absolute values of _data_ and then down-weights nodes that weren't in DOI by _w_ (if _DOI_=0, _w_ is coerced to 1). 'p_value' assumes _data_ are p-values and calculates _-log10()_ . 'exp' assumes _data_ are log fold changes and has a _DOI_ arg. For _DOI_=-1,1, it exponentiates the product of _DOI_ and _logFC_. For _DOI_=0, it exponentiates abs( _logFC_).
+#' _FUN_ and _FUN.params_ are used to calculate seed values (which must be non-negative) from the values in _data_ for use in `RWR()`. There are default functions you can specify using character scalars. For NULL, no transformation is done. 'binary' assumes that all values in _data_ are 0 or 1 so no transformation is done. 'shift_scale' is for data types with a range centered about zero and takes two parameters: _DOI_ (direction of interest: 1 for positive, -1 for negative, and 0 for both) and _w_ (numeric value between 0 and 1). It takes the absolute values of _data_ and then down-weights nodes that weren't in DOI by _w_ (if _DOI_=0, _w_ is coerced to 1). 'p_value' assumes _data_ are p-values and calculates _-log10()_ . 'exp' assumes _data_ are log fold changes and has a _DOI_ arg. For _DOI_=-1,1, it exponentiates the product of _DOI_ and _logFC_. For _DOI_=0, it exponentiates abs( _logFC_).
 #'
-#' `run_AMEND()` can also implement a biased random walk based on a user-defined vertex attribute _brw.attr_. These should be non-negative with values greater (lesser) than 1 increasing (decreasing) transition probabilities to a node in RWR. This can allow you to integrate other information (e.g., survival data) in active module identification. Another possible use is to artificially center modules around nodes of interest by having _brw.attr_ decrease as a function of distance from these nodes of interest. The biased random walk is done by left multiplying the adjacency matrix by a diagonal matrix whose diagonal elements are values given by _brw.attr_.
+#' `run_AMEND()` can also implement a biased random walk based on a user-defined vertex attribute _brw.attr_. These should be non-negative with larger values increasing transition probabilities to a node in RWR. This allows you to integrate other information (e.g., survival data) in active module identification. Another possible use is to artificially center modules around nodes of interest by using a character vector for _brw.attr_. This will assign node values that decrease as a function of distance from these nodes of interest. The biased random walk is done by left multiplying the adjacency matrix by a diagonal matrix whose elements are values given by _brw.attr_.
+#'
+#' The _aggregate.multiplex_ argument specifies whether multiplex layers should be collapsed for subnetwork identification. This involves running RWR on the full network and then collapsing the multiplex layers onto one layer given by the "primary" argument in the input list. RWR scores are aggregated using the 'agg.method' argument in input list. The subnetwork that is returned will contain the collapsed multiplex component rather than nodes from individual layers. This can be done for none, some, or all of the multiplex components of the input graph.
 #'
 #' See the [manuscript](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10324253/) for more details on the AMEND algorithm. There have been modifications to the algorithm as presented in the original paper.
 #'
 #' @param graph,adj_matrix,edge_list A single graph like object in the form of an igraph, adjacency matrix, or edge list. Or, a named list containing multiple graph-like objects of the same type, to be merged. The merged graph must be connected. If a third column is provided in an edge list, these are taken as edge weights. Only one of graph, adj_matrix, or edge_list should be given, with priority given to graph, then adj_matrix, then edge_list. See 'Details' for correct naming conventions.
 #' @param n Size of the final module to be approximated.
-#' @param data A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, or a character string (denoting a vertex attribute of the input igraph object) containing the experimental data from which seed values for RWR will be derived according to _FUN_ and _FUN.params_ args. See 'Details' for correct naming conventions.
-#' @param node_type A named list of named character vectors (list elements correspond to graph components), a named character vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Denotes the component and the multiplex layer of each node. If NULL and multiplex and/or heterogeneous, node labels must follow 'name|type_layer' naming scheme (e.g., MYC|gene_1). See 'Details' for correct naming conventions.
-#' @param brw.attr A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values. Should be non-negative, with larger values increasing the transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. See 'Details' for biased random walk info.
-#' @param FUN A function, named list of functions, named list of character strings, a single character string, or NULL. Function for transforming values in _data_ to derive seed values for RWR. Names correspond to graph components. Character strings should correspond to a default function: one of 'binary', 'shift_scale', 'p_value', or 'exp'. NULL means no transformation is done to values in _data_. See 'Details' for descriptions of default functions.
+#' @param data A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, or a character scalar (denoting a vertex attribute of the input igraph object) containing the experimental data from which seed values for RWR will be derived according to _FUN_ and _FUN.params_ args. See 'Details' for correct naming conventions.
+#' @param node_type A named list of named character vectors (list elements correspond to graph components), a named character vector, a character scalar (denoting a vertex attribute of the input igraph object), or NULL. Denotes the component and the multiplex layer of each node. If NULL and multiplex and/or heterogeneous, node labels must follow 'name|type_layer' naming scheme (e.g., MYC|gene_1). See 'Details' for correct naming conventions.
+#' @param brw.attr A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character vector (of nodes of interest), a character scalar (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values should be non-negative, with larger values increasing the transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. Character vector gives nodes of interest towards which transition probabilities are increased. See 'Details' for biased random walk info.
+#' @param FUN A function, named list of functions, named list of character scalars, a single character scalar, or NULL. Function for transforming values in _data_ to derive seed values for RWR. Names correspond to graph components. Character strings should correspond to a default function: one of 'binary', 'shift_scale', 'p_value', or 'exp'. NULL means no transformation is done to values in _data_. See 'Details' for descriptions of default functions.
 #' @param FUN.params A named list of lists of named function arguments, a named list of named function arguments, or NULL. Function arguments to be passed to _FUN_. Names should match names in _FUN_.
 #' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and _node_type_ must be included as an argument or graph vertex attribute.
 #' @param multiplex Logical. If true, graph is assumed to contain multiplex components.
-#' @param aggregate.multiplex A named list or NULL. The list element 'primary' contains the name of the primary layer for a multiplex component whose edges will be used during subnetwork identification. The multiplex component is collapsed onto this primary layer. The list element 'agg.method' contains a character scalar referring to an aggregation function. NULL for no aggregating.
+#' @param aggregate.multiplex A named list (for aggregating) or NULL (for no aggregating). The list element 'primary' contains the name of the primary layer for a multiplex component whose edges will be used during subnetwork identification. The multiplex component is collapsed onto this primary layer. The list element 'agg.method' contains a character scalar referring to an aggregation function for vertex attributes ('mean', 'median', 'sum', 'gmean', 'hmean'). gmean=geometric, hmean=harmonic.
 #' @param normalize Normalization scheme of adjacency matrix for random walk with restart
 #' @param k Value between 0 and 1. When normalize = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees, which is raised to the power -_k_. As _k_ increases, edge weights are penalized more for the degrees of their adjacent nodes.
 #' @param jump.prob,net.weight A named vector, or NULL. _jump.prob_ is the probability of random walker jumping from one component of graph to another in RWR. _net.weight_ is the relative weight given to nodes of a component of graph, applied to seed vector in RWR. Only used when heterogeneous=TRUE.
@@ -160,9 +161,12 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
   # if(length(data) == 1 && is.character(data)){
   #   data.name = data
   # }else data.name = "scores"
-  if(length(brw.attr) == 1 && is.character(brw.attr)){
+  if(is.character(brw.attr) && length(brw.attr) == 1){
     brw.attr.nm = brw.attr
   }else brw.attr.nm = "brw.values"
+  if(is.character(brw.attr) && length(brw.attr) > 1){
+    brw.flag = TRUE
+  }else brw.flag = FALSE
 
   graph = create_integrated_graph(graph = graph, adj_matrix = adj_matrix, edge_list = edge_list, data = data, node_type = node_type, brw.attr = brw.attr,
                                   FUN = FUN, FUN.params = FUN.params, heterogeneous = heterogeneous, multiplex = multiplex, lcc = TRUE)
@@ -173,6 +177,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
   for(i in seq_along(nt)) tmp = c(tmp, which(V(graph)$node_type == nt[i]))
   p = order(tmp)
   graph = igraph::permute(graph, p)
+  comps.og = unique(get.type(V(graph)$name, 3))
 
   # Create aggregated graph
   if(is.null(aggregate.multiplex)){
@@ -358,6 +363,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
 
     if(verbose) message(paste("Starting filtering rate:", round(eta, 4)))
     repeat{
+      # if(iter.num == 2) stop("TEST")
       if(verbose) message(paste("Iteration:", iter.num))
       if(iter.num == 1){
         rate.difference = avg.rd
@@ -365,7 +371,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
         decay.N = vcount(agg.graph)
         adj <- adj_mat
       }else{
-        rate.difference = c(avg.rd, do.call(c, lapply(all_scores, function(x) x[10] - x[9])))
+        rate.difference = c(avg.rd, unlist(lapply(all_scores, function(x) x[10] - x[9])))
         rate.difference = rate.difference[ifelse(length(rate.difference) >= ma_window, length(rate.difference) - ma_window + 1, 1):length(rate.difference)]
         e = all_scores[[iter.num-1]][9]
 
@@ -373,7 +379,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
           decay.N = vcount(agg.graph)
         }else decay.N = length(all_nets[[iter.num-2]])
 
-        adj <- adj[-rm.id, -rm.id]
+        adj <- adj[-rm.id, -rm.id, drop=FALSE]
       }
       # Setting shifting percentile (i.e., filtering rate) for this iteration
       decay <- find_decay(N = decay.N, eta0 = e, n = n, rate.diff = rate.difference)
@@ -382,17 +388,18 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
 
       # Determining whether graph is still heterogeneous, b/c all of one node type may have been filtered out
       if(heterogeneous){
-        if(length(unique(V(subg[[1]])$node_type)) < 2){
+        comps = unique(get.type(V(subg[[1]])$name, 3))
+        if(length(comps) < 2){ # length(unique(V(subg[[1]])$node_type)) < 2
           heterogeneous = FALSE
-          if(verbose) message(paste0("All nodes of type \'", setdiff(nt, unique(V(subg[[1]])$node_type)), "\' have been filtered out."))
+          if(verbose) message(paste0("All nodes of type \'", setdiff(comps.og, comps), "\' have been filtered out."))
         }
       }
       # Determine whether graph is still multiplex. Check the number of layers for each node type
       if(multiplex){
-        uniq.types = unique(get.type(unique(V(subg[[1]])$name), 3))
+        comps = unique(get.type(V(subg[[1]])$name, 3))
         tmp = FALSE
-        for(i in seq_along(uniq.types)){
-          id = which(get.type(V(subg[[1]])$name,3) == uniq.types[i])
+        for(i in seq_along(comps)){
+          id = which(get.type(V(subg[[1]])$name, 3) == comps[i])
           if(length(unique(V(subg[[1]])$node_type[id])) > 1) tmp = TRUE
         }
         multiplex = tmp
@@ -412,6 +419,9 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
                                 multiplex = multiplex, net.weight = net.weight, layer.weight = layer.weight, iteration = iter.num, agg.method = aggregate.multiplex)
       subg[[2]] = expand_graph(ig = subg[[1]], ag = rgs[[1]], control = aggregate.multiplex)
       sub.ag[[2]] = rgs[[1]]
+
+      # Update brw attr for full graph
+      subg[[2]] = set_brw_attr(graph = subg[[2]], brw.attr = brw.attr, brw.attr.nm = brw.attr.nm, brw.flag = brw.flag)
 
       # break out of repeat loop if there is no change in network or if subnet size <= 2
       # if(vcount(subg[[2]]) == vcount(subg[[1]]) || vcount(subg[[2]]) <= 2) break
@@ -820,7 +830,7 @@ get_subnetwork = function(ig, amend_object, k){
 
 #' @title Get a pre-defined aggregation function
 #'
-#' @description Given a character string, this returns a function that will aggregate values of common nodes.
+#' @description Given a character scalar, this returns a function that will aggregate values of common nodes.
 #'
 #' @param x character scalar
 #'
@@ -894,7 +904,10 @@ create_aggregated_graph = function(graph, control){
 
 #' @title Expand a graph
 #'
-#' @description Given an aggregated graph, returns its expanded counterpart, induced from the original, full graph.
+#' @description
+#' Given an aggregated graph, returns its expanded counterpart, induced from the original, full graph.
+#' Takes nodes from aggregated graph, identifies nodes that were in a collapsed multiplex component, duplicates them as necessary, and appends appropriate '|component_layer' information.
+#' Returns an induced subgraph of ig that contains only node names matching nodes of aggregated graph.
 #'
 #' @param ig Input graph
 #' @param ag Aggregated graph
@@ -902,12 +915,10 @@ create_aggregated_graph = function(graph, control){
 #'
 #' @return igraph object
 #'
-#' Takes nodes from aggregated graph, identifies nodes that were in a collapsed multiplex component, duplicates them as necessary, and appends appropriate '|component_layer' information
-#' Returns an induced subgraph of ig that contains only node names matching the 'name' vertex attribute of full graph.
 expand_graph = function(ig, ag, control){
   if(!is.null(control)){
     ag.names = V(ag)$name
-    is.ag = !grepl("_", get.type(ag.names, 2))
+    is.ag = get.type(ag.names, 3) %in% extract_string(control$primary, "_", 1)
     ag.names[is.ag] = get.type(ag.names[is.ag], 1)
 
     ig.names = V(ig)$name
@@ -916,5 +927,48 @@ expand_graph = function(ig, ag, control){
 
     graph = igraph::induced_subgraph(graph = ig, vids = which(ig.names %in% ag.names))
   }else graph = ag
+  graph
+}
+
+
+#' @title Set the Biased Random Walk attribute
+#'
+#' @description
+#' Calculates values for a biased random walk. This value is a decreasing function of minimum distance in the full graph to a node of interest (NOI): f(d,k) = exp(-k*d), where k >= 0, d=distance.
+#'
+#' @param graph Input graph
+#' @param brw.attr Character vector. Denotes the nodes of interest (NOI) used to artificially seed the active module.
+#' @param brw.attr.nm Character scalar. The name of the vertex attribute to be used for biased random walk.
+#' @param brw.flag Logical. True returns graph with new biased random walk attribute. False returns input graph.
+#'
+#' @return igraph object
+#'
+set_brw_attr = function(graph, brw.attr, brw.attr.nm, brw.flag){
+  if(brw.flag){
+    # c.id = which(unlist(lapply(brw.attr, is.character)))
+    # n.id = which(unlist(lapply(brw.attr, is.numeric)))
+    # noi = brw.attr[[c.id]]
+    # k = brw.attr[[n.id]]
+    noi = brw.attr
+    k = 1
+    # Get IDs of NOIs in graph
+    name.only = get.type(V(graph)$name, 1)
+    name.comp = paste(name.only, get.type(V(graph)$name, 3), sep = "|")
+    name.comp.layer = V(graph)$name
+    noi.id = which(name.only %in% noi | name.comp %in% noi | name.comp.layer %in% noi)
+    if(length(noi.id) > 0){
+      # Get distance to closest NOI for each node in graph
+      d.mat = igraph::distances(graph = graph, v = noi.id)
+      node.dists = apply(d.mat, 2, mean)
+      # Calculate values for biased random walk
+      alpha = exp(-node.dists * k)
+      while(any(alpha == 0 & !node.dists %in% c(0, Inf))){
+        k = k * 0.9
+        alpha = exp(-node.dists * k)
+      }
+      # Assign values to 'brw.attr.nm' vertex attribute in graph
+      igraph::vertex_attr(graph, brw.attr.nm) = alpha[match(V(graph)$name, names(alpha))]
+    }
+  }
   graph
 }

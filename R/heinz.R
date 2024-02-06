@@ -136,7 +136,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
       # Iteratively exclude all negative nodes of degree 1 from MST
       loop = TRUE
       while(loop){
-        neg_deg1 = V(mst)[igraph::degree(mst) == 1 & igraph::vertex_attr(mst, van) < 0] #!!!!!!!!!!!!!!!!!!!!!!!
+        neg_deg1 = which(igraph::degree(mst) == 1 & igraph::vertex_attr(mst, van) < 0)
         if(length(neg_deg1) == 0){
           loop = FALSE
         }else{
@@ -172,11 +172,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
       ttmp <- as.numeric(matrix(tmp, nrow = 2)[2, ])
       tmp_nodes <- unlist(lapply(conn.comp.graph, igraph::get.vertex.attribute, "name")[ttmp])
       subgraph = igraph::induced_subgraph(ig, which(V(ig)$name %in% tmp_nodes))
-      if(!igraph::is_connected(subgraph)){
-        clust <- igraph::components(subgraph)
-        cid <- which.max(clust$csize)
-        subgraph <- igraph::induced_subgraph(subgraph, which(clust$membership == cid))
-      }
+      subgraph = largest_connected_component(subgraph)
       V(subgraph)$type <- "desired"
       subgraph = igraph::delete_vertex_attr(subgraph, van)
       return(subgraph)
@@ -264,6 +260,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
           }
         }
         g.tmp = igraph::delete_vertex_attr(g.tmp, van)
+        g.tmp = largest_connected_component(g.tmp)
         return(g.tmp)
       }else{
         if(!igraph::is_simple(subg)) subg = igraph::simplify(subg)
@@ -324,6 +321,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
         type[tmp_border_nodes[tmp_border_nodes %in% names(type)]] <- "linker"
         V(subgraph)$type <- type
         subgraph = igraph::delete_vertex_attr(subgraph, van)
+        subgraph = largest_connected_component(subgraph)
         return(subgraph)
       }
     }

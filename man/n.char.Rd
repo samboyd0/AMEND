@@ -7,7 +7,7 @@
 n.char(x, ch)
 }
 \arguments{
-\item{x}{character string or vector to search}
+\item{x}{character scalar or vector to search}
 
 \item{ch}{character to search for}
 }

@@ -13,5 +13,5 @@ get_aggregate_method(x)
 aggregation function
 }
 \description{
-Given a character string, this returns a function that will aggregate values of common nodes.
+Given a character scalar, this returns a function that will aggregate values of common nodes.
 }

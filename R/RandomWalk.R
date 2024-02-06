@@ -68,7 +68,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     mono.adj = vector("list", length(monoplex.comps)); names(mono.adj) = monoplex.comps
     for(i in seq_along(mono.adj)){
       id = which(get.type(rownames(adjM), 3) %in% monoplex.comps[i])
-      mono.adj[[i]] = adjM[id,id]
+      mono.adj[[i]] = adjM[id,id,drop=FALSE]
     }
     mono.norm = vector("list", length(monoplex.comps)); names(mono.norm) = monoplex.comps
     for(i in seq_along(mono.adj)){
@@ -91,7 +91,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         bottom.left.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[i]]), ncol = ncol(adj.comps[[j]]), dimnames = list(rownames(adj.comps[[i]]), colnames(adj.comps[[j]])), sparse = TRUE)
         for(ii in seq_len(L.r)){ # Row-wise
           for(jj in seq_len(L.c)){ # Col-wise
-            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj])]
+            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
             bottom.left.tmp[which(nt.r == uniq.nt.r[ii]), which(nt.c == uniq.nt.c[jj])] = tmp
@@ -106,7 +106,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         top.right.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[j]]), ncol = ncol(adj.comps[[i]]), dimnames = list(rownames(adj.comps[[j]]), colnames(adj.comps[[i]])), sparse = TRUE)
         for(ii in seq_len(L.r)){ # Row-wise
           for(jj in seq_len(L.c)){ # Col-wise
-            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj])]
+            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
             # tmp = column_normalize(tmp, norm, k)
@@ -146,7 +146,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     uniq.types = unique(node_type)
     multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", pos=1))
     id = which(get.type(rownames(adjM), 3) %in% multiplex.comps)
-    multi.adj = adjM[id,id]
+    multi.adj = adjM[id,id,drop=FALSE]
 
     ## Number of layers
     L = length(unique(get.type(rownames(multi.adj), 2)))
@@ -168,7 +168,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     new.mat = Matrix::Matrix(data = 0, nrow = nrow(multi.adj), ncol = ncol(multi.adj), dimnames = dimnames(multi.adj), sparse = TRUE)
     for(j in seq_len(L)){ # Row-wise
       for(ii in seq_len(L)){ # Col-wise
-        tmp = multi.adj[l.ids[[j]], l.ids[[ii]]]
+        tmp = multi.adj[l.ids[[j]], l.ids[[ii]],drop=FALSE]
         tmp.dimnames = list(dimnames(multi.adj)[[1]][l.ids[[j]]], dimnames(multi.adj)[[2]][l.ids[[ii]]])
         tmp = column_normalize(tmp, norm, k, tmp.dimnames)
         # tmp = column_normalize(tmp, norm, k)
@@ -195,7 +195,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     multi.adj = vector("list", length(multiplex.comps)); names(multi.adj) = multiplex.comps
     for(i in seq_along(multi.adj)){
       id = which(get.type(rownames(adjM), 3) %in% multiplex.comps[i])
-      multi.adj[[i]] = adjM[id,id]
+      multi.adj[[i]] = adjM[id,id,drop=FALSE]
     }
 
     multi.norm = vector("list", length(multiplex.comps)); names(multi.norm) = multiplex.comps
@@ -222,7 +222,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
       new.mat = Matrix::Matrix(data = 0, nrow = nrow(multi.adj[[i]]), ncol = ncol(multi.adj[[i]]), dimnames = dimnames(multi.adj[[i]]), sparse = TRUE)
       for(j in seq_len(L)){ # Row-wise
         for(ii in seq_len(L)){ # Col-wise
-          tmp = multi.adj[[i]][l.ids[[j]], l.ids[[ii]]]
+          tmp = multi.adj[[i]][l.ids[[j]], l.ids[[ii]],drop=FALSE]
           tmp.dimnames = list(dimnames(multi.adj[[i]])[[1]][l.ids[[j]]], dimnames(multi.adj[[i]])[[2]][l.ids[[ii]]])
           tmp = column_normalize(tmp, norm, k, tmp.dimnames)
           new.mat[l.ids[[j]], l.ids[[ii]]] = tmp
@@ -248,7 +248,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
       mono.adj = vector("list", length(monoplex.comps)); names(mono.adj) = monoplex.comps
       for(i in seq_along(mono.adj)){
         id = which(get.type(rownames(adjM), 3) %in% monoplex.comps[i])
-        mono.adj[[i]] = adjM[id,id]
+        mono.adj[[i]] = adjM[id,id,drop=FALSE]
       }
       mono.norm = vector("list", length(monoplex.comps)); names(mono.norm) = monoplex.comps
       for(i in seq_along(mono.adj)){
@@ -264,7 +264,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     new.mat = adj.comps[[1]]
     for(i in 2:length(uniq.types)){ # Outside (row)
       for(j in 1:(i-1)){ # Inside (col)
-        nt.r = get.type(rownames(adj.comps[[i]]),2)
+        nt.r = get.type(rownames(adj.comps[[i]]),2) ### i subscript out of bounds! (iteration 2 of run_AMEND)
         uniq.nt.r = unique(nt.r)
         nt.c = get.type(colnames(adj.comps[[j]]),2)
         uniq.nt.c = unique(nt.c)
@@ -273,7 +273,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         bottom.left.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[i]]), ncol = ncol(adj.comps[[j]]), dimnames = list(rownames(adj.comps[[i]]), colnames(adj.comps[[j]])), sparse = TRUE)
         for(ii in seq_len(L.r)){ # Row-wise
           for(jj in seq_len(L.c)){ # Col-wise
-            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj])]
+            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
             bottom.left.tmp[which(nt.r == uniq.nt.r[ii]), which(nt.c == uniq.nt.c[jj])] = tmp
@@ -288,7 +288,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         top.right.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[j]]), ncol = ncol(adj.comps[[i]]), dimnames = list(rownames(adj.comps[[j]]), colnames(adj.comps[[i]])), sparse = TRUE)
         for(ii in seq_len(L.r)){ # Row-wise
           for(jj in seq_len(L.c)){ # Col-wise
-            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj])]
+            tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
             top.right.tmp[which(nt.r == uniq.nt.r[ii]), which(nt.c == uniq.nt.c[jj])] = tmp
@@ -394,7 +394,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
       stop("The function must require the row names of the input setSeeds.\n")
     }else if (any(is.na(rownames(data)))) {
       warning("setSeeds with NA as row names will be removed")
-      data <- data[!is.na(rownames(data)), ]
+      data <- data[!is.na(rownames(data)), ,drop=FALSE]
       node_type = node_type[!is.na(rownames(data))]
     }
     if(multiplex && heterogeneous){
@@ -403,7 +403,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
       for(i in seq_along(layers)){
         id = which(node_type == layers[i])
         if(grepl("_", layers[i])) tmp = layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]] else tmp = 1
-        p0[id] = sum2one(data[id,]) * tmp
+        p0[id] = sum2one(data[id, ,drop=FALSE]) * tmp
       }
       nt = unique(extract_string(layers, "_", pos=1))
       for(i in seq_along(nt)){
@@ -417,7 +417,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
       p0 = numeric(length(node_type))
       for(i in seq_along(nt)){
         id = which(node_type == nt[i])
-        p0[id] = sum2one(data[id,]) * net.weight[nt[i]]
+        p0[id] = sum2one(data[id, ,drop=FALSE]) * net.weight[nt[i]]
       }
       P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
     }
@@ -426,7 +426,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
       p0 = numeric(length(node_type))
       for(i in seq_along(layers)){
         id = which(node_type == layers[i])
-        p0[id] = sum2one(data[id,]) * layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]]
+        p0[id] = sum2one(data[id, ,drop=FALSE]) * layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]]
       }
       P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
     }
@@ -438,7 +438,7 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
     PTmatrix <- P0matrix
   }else {
     PTmatrix <- Matrix::Matrix(0, nrow = nrow(P0matrix), ncol = ncol(P0matrix), sparse = T)
-    P0 <- P0matrix[, 1]
+    P0 <- P0matrix[, 1,drop=FALSE]
     step <- 0
     delta <- 1
     PT <- P0
@@ -527,9 +527,10 @@ modify_adj_mat = function(adjM, k){
 #'
 column_normalize = function(adjM, norm, k, dim_names){
   if(any(unlist(lapply(dim_names, function(x) length(x) == 1)))){
-    rL = length(dim_names[[1]])
-    cL = length(dim_names[[2]])
-    adjM = Matrix::Matrix(adjM, nrow = rL, ncol = cL, sparse = TRUE, dimnames = dim_names)
+    # rL = length(dim_names[[1]])
+    # cL = length(dim_names[[2]])
+    # adjM = Matrix::Matrix(adjM, nrow = rL, ncol = cL, sparse = TRUE, dimnames = dim_names)
+    dimnames(adjM) = dim_names
     adjM = methods::as(methods::as(methods::as(adjM, "dMatrix"), "generalMatrix"), "CsparseMatrix")
   }
   if(norm == "degree"){

@@ -1,10 +1,3 @@
-#======#
-# To-Do
-#======#
-# - Make create_integrated_graph() preserve any vertex attributes that are common to all graph inputs (or just all vertex attributes, assigning NA to nodes that don't have a value)
-# - Create biased random walk functionality where the user inputs a list of nodes of interest, and the algorithm assigns values inversely related to distance (in integrated graph) from these nodes.
-#======#
-
 #' @importFrom igraph vcount V V<- E E<- vertex_attr vertex_attr<-
 
 #' @title Create an integrated graph from a list of graph-like objects
@@ -17,17 +10,17 @@
 #'
 #' In order to be able to properly identify nodes in the network, there are a few naming conventions for both node labels and function arguments that must be followed.
 #'
-#' If the input network is heterogeneous and a single object, node names must be appended with '|component', where 'component' is the name of the component and '|' is the delimiter (so node names can't contain '|'). If a list input, the list names correspond to the component and will be appended to node names in the integrated graph. The names of list elements corresponding to bipartite networks must include the relevant components separated by ';', e.g., 'protein;metabolite;drug' (so names of components also can't include ';').
+#' If the input network is heterogeneous and a single object, node names must be appended with '|component', where 'component' is the name of the component and '|' is the delimiter (so node names can't contain '|'). If a list input, the list names correspond to the component and will be appended to node names in the integrated graph. The names of list elements corresponding to bipartite networks must include the relevant components separated by ';', e.g., 'protein;metabolite;drug' (so names of components can't include ';').
 #'
 #' If the input network is multiplex and a single object, node names must be appended with '|component_layer', where 'layer' is the name of the layer and '`_`' is the delimiter (so component and layer names can't contain '_'). If a list input, the list names correspond either to the component _and_ layer, or if it only gives the component name and that component is multiplex, the node names must be appended with 'component_layer' to differentiate between layers. Bipartite connections between nodes of two multiplex components will be applied to all layers.
 #'
 #' An effort was made to flexibly accept different network input objects. Just keep in mind that for heterogeneous/multiplex networks, the algorithm must have a way to identify a specific node within a specific component and layer using the '|' and '_' syntax described above.
 #'
 #' @param graph,adj_matrix,edge_list A single graph like object in the form of an igraph, adjacency matrix, or edge list. Or, a named list containing multiple graph-like objects of the same type, to be merged. The merged graph must be connected. If a third column is provided in an edge list, these are taken as edge weights. Only one of graph, adj_matrix, or edge_list should be given, with priority given to graph, then adj_matrix, then edge_list. See 'Details' for correct naming conventions.
-#' @param data A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, or a character string (denoting a vertex attribute of the input igraph object) containing the experimental data from which seed values for RWR will be derived according to _FUN_ and _FUN.params_ args. See 'Details' for correct naming conventions.
-#' @param node_type A named list of character vectors (list elements correspond to graph components), a named character vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. The list elements represent sets of nodes that belong to the corresponding components. The character vector contains _component_layer_ tags for the node name given in names of vector. If NULL and multiplex and/or heterogeneous, node labels must follow 'name|type_layer' naming scheme (e.g., MYC|gene_1). See 'Details' for correct naming conventions.
-#' @param brw.attr A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character string (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values. Should be non-negative, with larger values increasing the transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. See 'Details' for biased random walk info.
-#' @param FUN A function, named list of functions, named list of character strings, a single character string, or NULL. Function for transforming values in _data_ to derive seed values for RWR. Names correspond to graph components. Character strings should correspond to a default function: one of 'binary', 'shift_scale', 'p_value', or 'exp'. NULL means no transformation is done to values in _data_. See 'Details' for descriptions of default functions.
+#' @param data A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, or a character scalar (denoting a vertex attribute of the input igraph object) containing the experimental data from which seed values for RWR will be derived according to _FUN_ and _FUN.params_ args. See 'Details' for correct naming conventions.
+#' @param node_type A named list of character vectors (list elements correspond to graph components), a named character vector, a character scalar (denoting a vertex attribute of the input igraph object), or NULL. The list elements represent sets of nodes that belong to the corresponding components. The character vector contains _component_layer_ tags for the node name given in names of vector. If NULL and multiplex and/or heterogeneous, node labels must follow 'name|type_layer' naming scheme (e.g., MYC|gene_1). See 'Details' for correct naming conventions.
+#' @param brw.attr A named list of named numeric vectors (list elements correspond to graph components), a named numeric vector, a character scalar (denoting a vertex attribute of the input igraph object), or NULL. Biased random walk vertex attribute values. Should be non-negative, with larger values increasing the transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1. See 'Details' for biased random walk info.
+#' @param FUN A function, named list of functions, named list of character scalars, a single character scalar, or NULL. Function for transforming values in _data_ to derive seed values for RWR. Names correspond to graph components. Character strings should correspond to a default function: one of 'binary', 'shift_scale', 'p_value', or 'exp'. NULL means no transformation is done to values in _data_. See 'Details' for descriptions of default functions.
 #' @param FUN.params A named list of lists of named function arguments, a named list of named function arguments, or NULL. Function arguments to be passed to _FUN_. Names should match names in _FUN_.
 #' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and node_type must be included as an argument or graph vertex attribute.
 #' @param multiplex Logical. If true, graph is assumed to contain multiplex components.
@@ -108,10 +101,10 @@
 create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = NULL, data, node_type = NULL, brw.attr = NULL,
                                    FUN = NULL, FUN.params = NULL, heterogeneous = FALSE, multiplex = FALSE, lcc = FALSE){
   # Handling data and brw.attr arguments
-  if(length(data) == 1 && is.character(data)){
+  if(is.character(data) && length(data) == 1){
     data.name = data
   }else data.name = "pre.seed.values"
-  if(length(brw.attr) == 1 && is.character(brw.attr)){
+  if(is.character(brw.attr) && length(brw.attr) == 1){
     brw.attr.nm = brw.attr
   }else brw.attr.nm = "brw.values"
 
@@ -212,14 +205,14 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
     for(i in seq_along(graph)) V(graph[[i]])$name = node_names[[i]]
 
     ## Collect any vertex attributes from graphs
-    v.attrs = c()
+    v.attrs = unique(unlist(lapply(graph, function(x) igraph::vertex_attr_names(x))))
     if(is.character(data) && length(data) == 1){
-      v.attrs = c(v.attrs, data.name)
+      v.attrs = unique(c(v.attrs, data.name))
     }
     if(is.character(brw.attr) && length(brw.attr) == 1){
-      v.attrs = c(v.attrs, brw.attr)
+      v.attrs = unique(c(v.attrs, brw.attr))
     }
-    if(!is.null(v.attrs)){
+    if(length(v.attrs) != 0){
       tmp.scores = vector("list", length(v.attrs)); names(tmp.scores) = v.attrs
       for(i in seq_along(v.attrs)){
         tmp.scores[[i]] = unlist(lapply(unname(graph), function(x){
@@ -250,12 +243,13 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
     graph = igraph::graph_from_edgelist(el = el[,1:2], directed = FALSE)
     igraph::E(graph)$weight = as.numeric(el[,3])
     graph = igraph::simplify(graph = graph, remove.multiple = TRUE, remove.loops = TRUE, edge.attr.comb = "median")
-    if(!is.null(v.attrs)){ # Redistribute the vertex attributes to the integrated graph
+    if(length(v.attrs) != 0){
+      # Redistribute the vertex attributes to the integrated graph
       for(i in seq_along(v.attrs)){
         ind = match(names(tmp.scores[[i]]), V(graph)$name)
         igraph::vertex_attr(graph, v.attrs[i], ind[!is.na(ind)]) = unname(tmp.scores[[i]][!is.na(ind)])
         # Switch NAs to zero
-        igraph::vertex_attr(graph, v.attrs[i], which(is.na(igraph::vertex_attr(graph, v.attrs[i])))) = 0
+        if(is.numeric(igraph::vertex_attr(graph, v.attrs[i]))) igraph::vertex_attr(graph, v.attrs[i], which(is.na(igraph::vertex_attr(graph, v.attrs[i])))) = 0
       }
     }
   }else if(!igraph::is_igraph(graph)) stop("Unrecognized input type for 'graph', 'adj_matrix', or 'edge_list'.")
@@ -371,7 +365,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
     # 'brw.attr'
     if(is.character(brw.attr) && length(brw.attr) == 1){
       if(!brw.attr.nm %in% igraph::vertex_attr_names(graph)) stop(paste0("No vertex attribute '", brw.attr.nm,"' found."))
-    }else if(is.list(brw.attr) && !is.null(names(brw.attr))){ # Map list values to graph
+    }else if(is.list(brw.attr) && !is.null(names(brw.attr)) && !(length(brw.attr) == 2 && any(unlist(lapply(brw.attr, is.character))) && any(unlist(lapply(brw.attr, is.numeric))))){ # Map list values to graph
       for(i in seq_along(non.bp.nm)){
         if(!non.bp.nm[i] %in% names(brw.attr) && !extract_string(non.bp.nm[i], "_", pos=1) %in% names(brw.attr)) stop("Node types don't match with names of 'brw.attr'.")
         if(grepl("_", non.bp.nm[i]) && non.bp.nm[i] %in% names(brw.attr) && extract_string(non.bp.nm[i], "_", pos=1) %in% names(brw.attr)) stop("Incorrect labeling for 'brw.attr'. See function documentation for correct naming conventions.")
@@ -394,7 +388,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
       igraph::vertex_attr(graph, brw.attr.nm, which(is.na(igraph::vertex_attr(graph, brw.attr.nm)))) = 1
     }else if(is.null(brw.attr)){ # Default to 1 (equivalent to an unbiased RW)
       igraph::vertex_attr(graph, brw.attr.nm) = 1
-    }else stop("Incorrect input for 'brw.attr'.")
+    }else if(!(is.character(brw.attr) && length(brw.attr) > 1)) stop("Incorrect input for 'brw.attr'.")
 
     # Check FUN argument
     if(is.null(FUN) || (is.character(FUN) && length(FUN) == 1) || (is.function(FUN) && length(FUN) == 1)){
@@ -467,7 +461,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
   }else{ ### Monoplex-homogeneous
     v.nm = V(graph)$name
     # Check data argument
-    if(length(data) == 1 && is.character(data)){
+    if(is.character(data) && length(data) == 1){
       if(!data %in% igraph::vertex_attr_names(graph)) stop(paste0("No vertex attribute \'", data, "\' in graph."))
     }else if(is.numeric(data) && !is.null(names(data))){
       if(any(!extract_string(v.nm, "\\|", pos=1) %in% names(data))) warning(paste0(sum(!extract_string(v.nm, "\\|", pos=1) %in% names(data)), " nodes didn't map to 'data'. Unmapped nodes will be given seed values of 0."))
@@ -477,7 +471,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
     # Check brw.attr argument
     if(is.null(brw.attr)){
       igraph::vertex_attr(graph, brw.attr.nm) = 1
-    }else if(length(brw.attr) == 1 && is.character(brw.attr)){
+    }else if(is.character(brw.attr) && length(brw.attr) == 1){
       if(!brw.attr %in% igraph::vertex_attr_names(graph)){
         warning(paste0("No vertex attribute \'", brw.attr, "\' in graph. Continuing with unbiased RW."))
         igraph::vertex_attr(graph, brw.attr.nm) = 1
@@ -486,7 +480,7 @@ create_integrated_graph = function(graph = NULL, adj_matrix = NULL, edge_list = 
       if(any(!extract_string(v.nm, "\\|", pos=1) %in% names(brw.attr))) warning(paste0(sum(!extract_string(v.nm, "\\|", pos=1) %in% names(brw.attr)), " nodes didn't map to 'brw.attr'. Unmapped nodes will be given seed values of 0."))
       ind = match(names(brw.attr), extract_string(v.nm, "\\|", pos=1))
       vertex_attr(graph, brw.attr.nm, ind[!is.na(ind)]) = brw.attr[!is.na(ind)]
-    }else stop("Incorrect input for 'brw.attr'.")
+    }else if(!(is.character(brw.attr) && length(brw.attr) > 1)) stop("Incorrect input for 'brw.attr'.")
 
     # Check FUN argument
     if(is.null(FUN) || (is.character(FUN) && length(FUN) == 1) || (is.function(FUN) && length(FUN) == 1)){
@@ -636,9 +630,9 @@ largest_connected_component = function(g){
 #' Given a list of inter-layer adjacency matrices (possibly from multiple multiplex components), this creates edges between common nodes across layers and places inter- and intra-layer matrices of a component in the same matrix.
 #'
 #' @param adj_matrix list of adjacency matrices.
-#' @param multiplex.comps character string of names of unique components that are multiplex.
-#' @param data.type character string of names of vertex attributes to preserve
-#' @param brw.attr.nm character string  of vertex attribute name for biased random walk.
+#' @param multiplex.comps character vector of names of unique components that are multiplex.
+#' @param data.type character vector of names of vertex attributes to preserve
+#' @param brw.attr.nm character scalar  of vertex attribute name for biased random walk.
 #'
 #' @returns A list of fused multiplex components
 #'
@@ -676,15 +670,6 @@ create_multiplex = function(adj_matrix, multiplex.comps, data.type, brw.attr.nm)
     # This is a problem in multiplex-homogeneous context, but not necessarily in a multiplex-heterogeneous context.
     multiplex.graph = igraph::graph_from_adjacency_matrix(adjmatrix = new.mat, mode = "undirected", weighted = TRUE)
     if(!igraph::is_connected(multiplex.graph)) stop(paste0("A layer in graph type \'", multiplex.comps[i],"\' has no nodes in common with any other layer."))
-
-    if(0){
-      # Add node_scores as 'data.type' to multiplex graph
-      # Add data, brw.attr, seeds, and Z to new graph
-      nm.vec = c(data.type, brw.attr.nm, "seeds", "Z")
-      for(j in seq_along(nm.vec)){
-        igraph::vertex_attr(multiplex.graph, nm.vec[j]) = unlist(lapply(graph[l.ids], function(x) igraph::vertex_attr(x, nm.vec[j])))[match(V(multiplex.graph)$name, unlist(lapply(graph[l.ids], function(x) V(x)$name)))]
-      }
-    }
 
     # Add node_type to multiplex graph
     V(multiplex.graph)$node_type = extract_string(V(multiplex.graph)$name, "\\|", pos=2)
@@ -826,7 +811,7 @@ all.good = function(x) all(x >= 0) && any(x > 0)
 #' @description
 #' This returns the number of instances of _ch_ found in character string or vector _x_.
 #'
-#' @param x character string or vector to search
+#' @param x character scalar or vector to search
 #' @param ch character to search for
 #'
 #' @returns integer
