@@ -6,6 +6,7 @@
 
 #' @importFrom igraph vcount V V<- E E<- vertex_attr vertex_attr<-
 #' @importFrom stats sd quantile
+#' @importFrom foreach %dopar%
 
 #' @title Identify active modules from an interaction network
 #'
@@ -28,6 +29,8 @@
 #'
 #' The _aggregate.multiplex_ argument specifies whether multiplex layers should be collapsed for subnetwork identification. This involves running RWR on the full network and then collapsing the multiplex layers onto one layer given by the "primary" argument in the input list. RWR scores are aggregated using the 'agg.method' argument in input list. The subnetwork that is returned will contain the collapsed multiplex component rather than nodes from individual layers. This can be done for none, some, or all of the multiplex components of the input graph.
 #'
+#' The _degree.bias_ argument specifies whether degree bias should be adjusted for. Degree bias arises when certain molecules are studied more often then others, or if certain technologies systematically favor the identification of interactors of molecules with certain characteristics. There are 3 methods available: Inflation-normalization ('IN'), Bistochastic Scaling ('BS'), and Stationary Distribution Scaling ('SDS').
+#'
 #' See the [manuscript](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10324253/) for more details on the AMEND algorithm. There have been modifications to the algorithm as presented in the original paper.
 #'
 #' @param graph,adj_matrix,edge_list A single graph like object in the form of an igraph, adjacency matrix, or edge list. Or, a named list containing multiple graph-like objects of the same type, to be merged. The merged graph must be connected. If a third column is provided in an edge list, these are taken as edge weights. Only one of graph, adj_matrix, or edge_list should be given, with priority given to graph, then adj_matrix, then edge_list. See 'Details' for correct naming conventions.
@@ -39,14 +42,17 @@
 #' @param FUN.params A named list of lists of named function arguments, a named list of named function arguments, or NULL. Function arguments to be passed to _FUN_. Names should match names in _FUN_.
 #' @param heterogeneous Logical. If TRUE, graph is considered heterogeneous (more than one distinct node type, e.g., proteins and metabolites), and _node_type_ must be included as an argument or graph vertex attribute.
 #' @param multiplex Logical. If true, graph is assumed to contain multiplex components.
-#' @param aggregate.multiplex A named list (for aggregating) or NULL (for no aggregating). The list element 'primary' contains the name of the primary layer for a multiplex component whose edges will be used during subnetwork identification. The multiplex component is collapsed onto this primary layer. The list element 'agg.method' contains a character scalar referring to an aggregation function for vertex attributes ('mean', 'median', 'sum', 'gmean', 'hmean'). gmean=geometric, hmean=harmonic.
+#' @param aggregate.multiplex A named list (for aggregating) or NULL (for no aggregating). The list element 'primary' contains the name of the primary layer for a multiplex component whose edges will be used during subnetwork identification. The multiplex component is collapsed onto this primary layer. The list element 'agg.method' contains a character scalar referring to an aggregation function for aggregating vertex attributes ('mean', 'median', 'sum', 'gmean', 'hmean'). gmean=geometric, hmean=harmonic.
 #' @param normalize Normalization scheme of adjacency matrix for random walk with restart
 #' @param k Value between 0 and 1. When normalize = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees, which is raised to the power -_k_. As _k_ increases, edge weights are penalized more for the degrees of their adjacent nodes.
+#' @param degree.bias List or NULL. NULL (default) for no degree bias adjustment. List names should include 'component', which is a character string of length greater than or equal to 1 specifying the components or layers to which the degree bias adjustment will be applied, and 'method', which is a character string of 'BS' (bistochastic scaling), 'IN' (inflation-normalization), or 'SDS' (stationary distribution scaling).
 #' @param jump.prob,net.weight A named vector, or NULL. _jump.prob_ is the probability of random walker jumping from one component of graph to another in RWR. _net.weight_ is the relative weight given to nodes of a component of graph, applied to seed vector in RWR. Only used when heterogeneous=TRUE.
 #' @param switch.layer.prob,layer.weight A named list of named vectors, or NULL. _switch.layer.prob_ is the probability of random walker to switch from current layer in a multiplex to another layer in same component. _layer.weight_ is relative weight given to nodes of a layer of a component of graph, applied to seed vector in RWR. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.
 #' @param verbose Logical. Whether to output current iteration number to show progress.
 #' @param eta Starting filtering rate. If NULL (default), a value is chosen based on the input network size and parameter _n_.
 #' @param identifier Optional. For use when performing many runs of AMEND to keep track of progress.
+#' @param in.parallel Logical. Run computations in parallel.
+#' @param n.cores number of cores to use in parallel computations
 #'
 #' @return a named list with the following elements:
 #' * module: the final module (i.e., subnetwork)
@@ -56,7 +62,7 @@
 #' * time: run time
 #' * input_params: list of input parameters
 #'
-#' @seealso [create_integrated_graph()], [list_input_checks()], [transition_matrix()], [RWR()], [heinz()], [get_subnetwork()]
+#' @seealso [create_integrated_graph()], [list_input_checks()], [transition_matrix()], [RWR()], [heinz()], [get_subnetwork()], [inflate_normalize()], [bistochastic_scaling()]
 #'
 #' @examples
 #' # Attach igraph library
@@ -145,11 +151,11 @@
 #' }
 #'
 #' @export
-run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25, data = NULL, node_type = NULL, brw.attr = NULL,
+run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 50, data = NULL, node_type = NULL, brw.attr = NULL,
                       FUN = NULL, FUN.params = NULL, heterogeneous = FALSE, multiplex = FALSE, aggregate.multiplex = NULL,
-                      normalize = c("degree", "modified_degree"), k = 0.5,
+                      normalize = c("degree", "modified_degree"), k = 0.5, degree.bias = NULL,
                       jump.prob = NULL, net.weight = NULL, switch.layer.prob = NULL, layer.weight = NULL,
-                      verbose = FALSE, eta = NULL, identifier = 1){
+                      verbose = FALSE, eta = NULL, identifier = 1, in.parallel = FALSE, n.cores){
   start_time = Sys.time()
 
   # Variables not set by user, but could change in future
@@ -157,19 +163,25 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
 
   normalize = match.arg(normalize)
 
-  # Handling data and brw.attr arguments
-  # if(length(data) == 1 && is.character(data)){
-  #   data.name = data
-  # }else data.name = "scores"
+  # Handling brw.attr argument
   if(is.character(brw.attr) && length(brw.attr) == 1){
     brw.attr.nm = brw.attr
   }else brw.attr.nm = "brw.values"
-  if(is.character(brw.attr) && length(brw.attr) > 1){
-    brw.flag = TRUE
-  }else brw.flag = FALSE
 
+  # Verifying that degree.bias argument is a list with at least a 'method' named element
+  if(!is.null(degree.bias) && (!is.list(degree.bias) || !'method' %in% names(degree.bias))) stop('\'degree.bias\' should be a list with names \'method\' and \'component\'.\n\'method\' should be one of \'BS\', \'IN\', or \'SDS\'.')
+
+  # Creating integrated graph
   graph = create_integrated_graph(graph = graph, adj_matrix = adj_matrix, edge_list = edge_list, data = data, node_type = node_type, brw.attr = brw.attr,
                                   FUN = FUN, FUN.params = FUN.params, heterogeneous = heterogeneous, multiplex = multiplex, lcc = TRUE)
+
+  if(is.character(brw.attr)){
+    name.only = get.type(V(graph)$name, 1)
+    name.comp = paste(name.only, get.type(V(graph)$name, 3), sep = "|")
+    name.comp.layer = V(graph)$name
+    if(any(brw.attr %in% c(name.only, name.comp, name.comp.layer))) brw.flag = TRUE else brw.flag = FALSE
+  }else brw.flag = FALSE
+  graph = set_brw_attr(graph = graph, brw.attr = brw.attr, brw.attr.nm = brw.attr.nm, brw.flag = brw.flag)
 
   # Sort order of vertices in graph
   nt = unique(sort(V(graph)$node_type))
@@ -177,7 +189,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
   for(i in seq_along(nt)) tmp = c(tmp, which(V(graph)$node_type == nt[i]))
   p = order(tmp)
   graph = igraph::permute(graph, p)
-  comps.og = unique(get.type(V(graph)$name, 3))
+  comps.orig = unique(get.type(V(graph)$name, 3))
 
   # Create aggregated graph
   if(is.null(aggregate.multiplex)){
@@ -245,7 +257,11 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
         }else if(is.null(names(layer.weight[[i]]))){
           warning("No layer names given in layer.weight[[", i, "]]. Assuming layer order matches order of input for graph/adj_matrix/edge_list.")
           names(layer.weight[[i]]) = graph_layer[graph_type == names(layer.weight)[i]]
-        }else if(any(!names(layer.weight[[i]]) %in% graph_layer)) stop("Names in layer.weight[[", i, "]] don't match any names in graph.")
+        }else if(any(!names(layer.weight[[i]]) %in% c(graph_layer, extract_string(graph_layer[grep("_", graph_layer)], "_", 2)))) stop("Names in layer.weight[[", i, "]] don't match any names in graph.")
+        if(any(!names(layer.weight[[i]]) %in% graph_layer & names(layer.weight[[i]]) %in% extract_string(graph_layer[grep("_", graph_layer)], "_", 2))){
+          id = which(!names(layer.weight[[i]]) %in% graph_layer & names(layer.weight[[i]]) %in% extract_string(graph_layer[grep("_", graph_layer)], "_", 2))
+          names(layer.weight[[i]])[id] = paste(names(layer.weight)[i], names(layer.weight[[i]])[id], sep='_')
+        }
         # Check values
         if(sum(layer.weight[[i]]) != 1) stop("Elements of layer.weight[[", i, "]] do not sum to 1.")
         if(any(layer.weight[[i]] < 0)) stop("Elements of layer.weight[[", i, "]] are not non-negative.")
@@ -289,7 +305,11 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
           if(length(switch.layer.prob[[i]]) != nL) stop("Incorrect number of layers given in switch.layer.prob[[", i, "]]")
           warning("No layer names given in switch.layer.prob[[", i, "]]. Assuming layer order matches order of input for graph/adj_matrix/edge_list.")
           names(switch.layer.prob[[i]]) = graph_layer[graph_type == names(switch.layer.prob)[i]]
-        }else if(any(!names(switch.layer.prob[[i]]) %in% graph_layer)) stop("Names in switch.layer.prob[[", i, "]] don't match any names in graph.")
+        }else if(any(!names(switch.layer.prob[[i]]) %in% c(graph_layer, extract_string(graph_layer[grep("_", graph_layer)], "_", 2)))) stop("Names in switch.layer.prob[[", i, "]] don't match any names in graph.")
+        if(any(!names(switch.layer.prob[[i]]) %in% graph_layer & names(switch.layer.prob[[i]]) %in% extract_string(graph_layer[grep("_", graph_layer)], "_", 2))){
+          id = which(!names(switch.layer.prob[[i]]) %in% graph_layer & names(switch.layer.prob[[i]]) %in% extract_string(graph_layer[grep("_", graph_layer)], "_", 2))
+          names(switch.layer.prob[[i]])[id] = paste(names(switch.layer.prob)[i], names(switch.layer.prob[[i]])[id], sep='_')
+        }
         # Check range
         if(any(switch.layer.prob[[i]] < 0) || any(switch.layer.prob[[i]] > 1)) stop("Incorrect range for values of switch.layer.prob[[", i, "]]. Must be between 0 and 1.")
       }
@@ -345,7 +365,6 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
       if(any(net.weight < 0)) stop("Elements of 'net.weight' are not non-negative.")
     }else stop("Incorrect input type for 'net.weight'. Must be a named numeric vector or NULL.")
   }
-
   repeat{
     all_scores <- list()
     all_nets <- list()
@@ -363,7 +382,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
 
     if(verbose) message(paste("Starting filtering rate:", round(eta, 4)))
     repeat{
-      # if(iter.num == 2) stop("TEST")
+      # if(iter.num == 1) browser()
       if(verbose) message(paste("Iteration:", iter.num))
       if(iter.num == 1){
         rate.difference = avg.rd
@@ -386,12 +405,13 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
       l <- exp_filtering_rate(eta0 = e, d = decay)
       ll <- l[ifelse(iter.num == 1, 1, 2)]
 
+      # !!!! CHANGE THESE 'IF' STATEMENTS TO CHECK IF A COMPONENT OR LAYER HAS BEEN COMPLETELY REMOVED !!!!
       # Determining whether graph is still heterogeneous, b/c all of one node type may have been filtered out
       if(heterogeneous){
         comps = unique(get.type(V(subg[[1]])$name, 3))
         if(length(comps) < 2){ # length(unique(V(subg[[1]])$node_type)) < 2
           heterogeneous = FALSE
-          if(verbose) message(paste0("All nodes of type \'", setdiff(comps.og, comps), "\' have been filtered out."))
+          if(verbose) message(paste0("All nodes of type \'", setdiff(comps.orig, comps), "\' have been filtered out."))
         }
       }
       # Determine whether graph is still multiplex. Check the number of layers for each node type
@@ -409,14 +429,15 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
       # Normalize adjacency matrix to get transition matrix
       n.adjM = transition_matrix(adjM = adj, norm = normalize, k = k, heterogeneous = heterogeneous, multiplex = multiplex,
                                  brw.attr = igraph::vertex_attr(subg[[1]], brw.attr.nm),
-                                 jump.prob = jump.prob, switch.layer.prob = switch.layer.prob)
+                                 jump.prob = jump.prob, switch.layer.prob = switch.layer.prob,
+                                 degree.bias = degree.bias, in.parallel = in.parallel, n.cores = n.cores)
 
       # Create matrix of seed values
       Seeds = matrix(V(subg[[1]])$seeds, ncol = 1, dimnames = list(V(subg[[1]])$name))
 
       # Choosing Restart parameter value through a 'normal' grid search
       rgs = restart_grid_search(ig = subg[[1]], ag = sub.ag[[1]], n.adj.M = n.adjM, seeds = Seeds, filtering_rate = ll, heterogeneous = heterogeneous,
-                                multiplex = multiplex, net.weight = net.weight, layer.weight = layer.weight, iteration = iter.num, agg.method = aggregate.multiplex)
+                                multiplex = multiplex, net.weight = net.weight, layer.weight = layer.weight, iteration = iter.num, agg.method = aggregate.multiplex, degree.bias = degree.bias, in.parallel = in.parallel, n.cores = n.cores)
       subg[[2]] = expand_graph(ig = subg[[1]], ag = rgs[[1]], control = aggregate.multiplex)
       sub.ag[[2]] = rgs[[1]]
 
@@ -510,6 +531,9 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
 #' @param layer.weight A named list of named vectors, or NULL. Relative weight given to nodes of a layer of a component of graph, applied to seed vector in RWR. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.
 #' @param iteration Current iteration of the AMEND algorithm.
 #' @param agg.method A named list. The element 'primary' contains the name of the primary layer for a multiplex component to be used during subnetwork identification. The element 'agg.method' contains a character scalar referring to an aggregation function.
+#' @param degree.bias List or NULL. NULL (default) for no degree bias adjustment. List names should include 'component', which is a character string of length greater than or equal to 1 specifying the components or layers to which the degree bias adjustment will be applied, and 'method', which is a character string of 'BS' (bistochastic scaling), 'IN' (inflation-normalization), or 'SDS' (stationary distribution scaling).
+#' @param in.parallel Logical. Run computations in parallel.
+#' @param n.cores number of cores to use in parallel computations
 #'
 #' @return a list containing an igraph object, subnetwork score, and restart value
 #'
@@ -541,7 +565,7 @@ run_AMEND <- function(graph = NULL, adj_matrix = NULL, edge_list = NULL, n = 25,
 #'                                      seeds = seeds, filtering_rate = 0.3)
 #' plot(search[[1]])
 #'
-restart_grid_search <- function(ig, ag, n.adj.M, seeds, filtering_rate, heterogeneous = FALSE, multiplex = FALSE, net.weight, layer.weight, iteration = 1, agg.method = NULL){
+restart_grid_search <- function(ig, ag, n.adj.M, seeds, filtering_rate, heterogeneous = FALSE, multiplex = FALSE, net.weight, layer.weight, iteration = 1, agg.method = NULL, degree.bias = NULL, in.parallel = FALSE, n.cores){
   if(!is.null(agg.method)){
     agg.fun = get_aggregate_method(agg.method$agg.method)
     flag = TRUE
@@ -551,39 +575,142 @@ restart_grid_search <- function(ig, ag, n.adj.M, seeds, filtering_rate, heteroge
     grid <- seq(0.5, 0.95, by = 0.05)
   }else grid <- seq(0.2, 0.95, by = 0.05)
 
-  score_metrics <- matrix(nrow = length(grid), ncol = 4)
-  nets <- vector(mode = "list", length = length(grid))
-  rm.id = c()
-  for(i in seq_along(grid)){
-    # RWR
-    PTmatrix2 <- RWR(nadjM = n.adj.M, setSeeds = seeds, restart = grid[i], heterogeneous = heterogeneous, multiplex = multiplex, net.weight = net.weight, layer.weight = layer.weight)
-    rwr_score <- as.vector(PTmatrix2)
-    names(rwr_score) <- V(ig)$name
-
-    # Aggregate RWR scores
-    if(flag){
-      tmp.val = stats::aggregate(rwr_score, by = list(V(ig)$agg_name), FUN = agg.fun)
-      rwr_score = tmp.val$x
-      names(rwr_score) = tmp.val$Group.1
-    }
-
-    # Maximum Scoring Subgraph Algorithm
-    rwr_score <- rwr_score - quantile(rwr_score, filtering_rate) # if filtering rate close to 0, quantile takes the minimum of rwr_score
-    nets[[i]] <- heinz(ag, rwr_score)
-
-    n.v <- vcount(nets[[i]])
-    mZ <- sum(V(nets[[i]])$Z) / n.v
-    mCC = sum(core_cc(nets[[i]])) / n.v
-
-    # To prevent filtering out too many nodes at one iteration
-    # This is the difference between the observed and theoretical filtering rates
-    if((vcount(ag) - n.v) / vcount(ag) - filtering_rate >= 0.25){
-      rm.id = c(rm.id, i)
-      next
-    }
-
-    score_metrics[i,] <- c(mCC, mZ, n.v, grid[i])
+  # Degree bias adjustment
+  if(!is.null(degree.bias) && degree.bias$method == 'SDS'){
+    sds = RWR(nadjM = n.adj.M, setSeeds = seeds, restart = 0, heterogeneous = heterogeneous, multiplex = multiplex, net.weight = net.weight, layer.weight = layer.weight)
+    sds = as.vector(sds)
+    names(sds) = V(ig)$name
+    sds[sds == 0] = min(sds[sds != 0]) # To avoid dividing by zero
   }
+
+  if(0){
+    #=======================================================================#
+    #=== Stouffer's Z for aggregating centrality measures (Experimental) ===#
+    # 0. Get input arguments
+    gamma = 0.75
+    w = c(ccc = 1, hc = 1, bc = 1)
+    # 1. Calculate core-clustering coefficient, harmonic centrality, and betweenness for each node
+    # cutoff could be set to a certain proportion of the diameter of the graph (i.e., maximum eccentricity, i.e., maximum of the maximum shortest path length for all nodes)
+    g.d = igraph::diameter(graph = ag)
+    kpath = ifelse(gamma == 1, -1, gamma * g.d)
+    ccc = core_cc(ag)
+    hc = igraph::harmonic_centrality(graph = ag, mode = 'out', normalized = FALSE, cutoff = kpath)
+    bc = igraph::betweenness(graph = ag, directed = TRUE, normalized = FALSE, cutoff = kpath)
+    centrality.matrix = matrix(c(ccc, hc, bc), ncol = 3)
+    # 2. Get empirical cumulative probabilities from these values.
+    centrality.matrix = apply(centrality.matrix, 2, function(x) stats::ecdf(x)(x))
+    # 3. Convert to standard normal values with inverse standard normal CDF
+    centrality.matrix = apply(centrality.matrix, 2, stats::qnorm)
+    # 4. For each node, compute Stouffer's Z-score by taking a weighted mean of these standard normal values.
+    aggregated.centrality = apply(centrality.matrix, 1, function(x) sum(x * w[match(names(x), names(w))]) / sqrt(sum(w^2)))
+    ## Note: Allow the user to supply positive weights for each centrality measure.
+    #=============================#
+  }
+
+  if(!in.parallel){
+    score_metrics <- matrix(nrow = length(grid), ncol = 4)
+    nets <- vector(mode = "list", length = length(grid))
+    rm.id = NULL
+    for(i in seq_along(grid)){
+      # RWR
+      PTmatrix2 <- RWR(nadjM = n.adj.M, setSeeds = seeds, restart = grid[i], heterogeneous = heterogeneous, multiplex = multiplex, net.weight = net.weight, layer.weight = layer.weight)
+      rwr_score <- as.vector(PTmatrix2)
+      names(rwr_score) <- V(ig)$name
+
+      # Degree bias adjustment
+      if(!is.null(degree.bias) && degree.bias$method == 'SDS'){
+        if(!multiplex && !heterogeneous){
+          tmp = rwr_score / sds
+          rwr_score = tmp / sum(tmp)
+        }else{
+          c_l = get.type(names(rwr_score), 2)
+          for(j in seq_along(degree.bias$component)){
+            id = which(c_l == degree.bias$component[j])
+            rwr_score[id] = (rwr_score[id] / sds[id]) / (sum(rwr_score[id] / sds[id]) / sum(rwr_score[id]))
+          }
+        }
+      }
+
+      # Aggregate RWR scores
+      if(flag){
+        tmp.val = stats::aggregate(rwr_score, by = list(V(ig)$agg_name), FUN = agg.fun)
+        rwr_score = tmp.val$x
+        names(rwr_score) = tmp.val$Group.1
+      }
+
+      # Maximum Scoring Subgraph Algorithm
+      rwr_score <- rwr_score - quantile(rwr_score, filtering_rate) # if filtering rate close to 0, quantile takes the minimum of rwr_score
+      nets[[i]] <- heinz(ag, rwr_score)
+
+      n.v <- vcount(nets[[i]])
+      mZ <- sum(V(nets[[i]])$Z) / n.v
+      mCC = sum(core_cc(nets[[i]])) / n.v
+
+      # To prevent filtering out too many nodes at one iteration
+      # This is the difference between the observed and theoretical filtering rates
+      if((vcount(ag) - n.v) / vcount(ag) - filtering_rate >= 0.25){
+        rm.id = c(rm.id, i)
+        next
+      }
+
+      score_metrics[i,] <- c(mCC, mZ, n.v, grid[i])
+    }
+  }
+  if(in.parallel){
+    cl = parallel::makeForkCluster(n.cores, outfile = "")
+    doParallel::registerDoParallel(cl)
+    res = foreach::foreach(i = 1:length(grid), .verbose = FALSE, .packages = c("igraph", "Matrix"), .export = NULL, .noexport = NULL) %dopar% {
+      # RWR
+      PTmatrix2 <- RWR(nadjM = n.adj.M, setSeeds = seeds, restart = grid[i], heterogeneous = heterogeneous, multiplex = multiplex, net.weight = net.weight, layer.weight = layer.weight)
+      rwr_score <- as.vector(PTmatrix2)
+      names(rwr_score) <- V(ig)$name
+
+      # Degree bias adjustment
+      if(!is.null(degree.bias) && degree.bias$method == 'SDS'){
+        if(!multiplex && !heterogeneous){
+          tmp = rwr_score / sds
+          rwr_score = tmp / sum(tmp)
+        }else{
+          c_l = get.type(names(rwr_score), 2)
+          for(j in seq_along(degree.bias$component)){
+            id = which(c_l == degree.bias$component[j])
+            rwr_score[id] = (rwr_score[id] / sds[id]) / (sum(rwr_score[id] / sds[id]) / sum(rwr_score[id]))
+          }
+        }
+      }
+
+      # Aggregate RWR scores
+      if(flag){
+        tmp.val = stats::aggregate(rwr_score, by = list(V(ig)$agg_name), FUN = agg.fun)
+        rwr_score = tmp.val$x
+        names(rwr_score) = tmp.val$Group.1
+      }
+
+      # Maximum Scoring Subgraph Algorithm
+      rwr_score <- rwr_score - quantile(rwr_score, filtering_rate) # if filtering rate close to 0, quantile takes the minimum of rwr_score
+      nets <- heinz(ag, rwr_score)
+
+      n.v <- vcount(nets)
+      mZ <- sum(V(nets)$Z) / n.v
+      mCC = sum(core_cc(nets)) / n.v
+
+      rm.id = NULL
+
+      # To prevent filtering out too many nodes at one iteration
+      # This is the difference between the observed and theoretical filtering rates
+      if((vcount(ag) - n.v) / vcount(ag) - filtering_rate >= 0.25){
+        rm.id = i
+        n.v = mZ = mCC = 0
+      }
+
+      list(c(mCC, mZ, n.v, grid[i]), nets, rm.id)
+    }
+    parallel::stopCluster(cl)
+    score_metrics = do.call(rbind, lapply(res, function(x) x[[1]]))
+    nets = lapply(res, function(x) x[[2]])
+    rm.id = unlist(lapply(res, function(x) x[[3]]))
+  }
+
   rm.id = unique(c(rm.id, which(score_metrics[,1] %in% c(0, NA))))
   if(length(rm.id) != 0){
     score_metrics = score_metrics[-rm.id,]
@@ -747,7 +874,7 @@ core_cc = function(g, weight = TRUE){
   n = vcount(g)
   w = numeric(n)
   for(i in seq_len(n)){
-    nborhood = igraph::make_ego_graph(g, order = 1, nodes = i)[[1]]
+    nborhood = igraph::make_ego_graph(g, order = 1, nodes = i, mode = "all")[[1]]
     cores = igraph::coreness(nborhood)
     max_core = igraph::induced_subgraph(nborhood, which(cores == max(cores)))
     w[i] = edge_density_weighted(max_core, weight = weight)
@@ -896,7 +1023,7 @@ create_aggregated_graph = function(graph, control){
       # Strip layer information from node labels
       V(graph)$name[get.type(V(graph)$name, 2) == other.layers[j]] = paste(get.type(V(graph)$name[get.type(V(graph)$name, 2) == other.layers[j]], 1), comps[i], sep = "|")
     }
-    # Melt graph
+    # Melt graph, i.e., fuse common nodes such that only one of them becomes adjacent to the edges of the others, and then remove duplicate nodes
     graph = melt_graph(g = graph, agg.method = control$agg.method)
   }
   return(graph)
@@ -918,12 +1045,13 @@ create_aggregated_graph = function(graph, control){
 expand_graph = function(ig, ag, control){
   if(!is.null(control)){
     ag.names = V(ag)$name
-    is.ag = get.type(ag.names, 3) %in% extract_string(control$primary, "_", 1)
-    ag.names[is.ag] = get.type(ag.names[is.ag], 1)
+    # is.ag = get.type(ag.names, 3) %in% extract_string(control$primary, "_", 1)
+    # ag.names[is.ag] = get.type(ag.names[is.ag], 1)
 
     ig.names = V(ig)$name
     is.ig = get.type(ig.names, 3) %in% extract_string(control$primary, "_", 1)
-    ig.names[is.ig] = get.type(ig.names[is.ig], 1)
+    # ig.names[is.ig] = get.type(ig.names[is.ig], 1)
+    ig.names[is.ig] = paste(get.type(ig.names[is.ig], 1), get.type(ig.names[is.ig], 3), sep='|')
 
     graph = igraph::induced_subgraph(graph = ig, vids = which(ig.names %in% ag.names))
   }else graph = ag

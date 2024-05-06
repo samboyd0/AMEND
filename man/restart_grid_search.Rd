@@ -15,7 +15,10 @@ restart_grid_search(
   net.weight,
   layer.weight,
   iteration = 1,
-  agg.method = NULL
+  agg.method = NULL,
+  degree.bias = NULL,
+  in.parallel = FALSE,
+  n.cores
 )
 }
 \arguments{
@@ -40,6 +43,12 @@ restart_grid_search(
 \item{iteration}{Current iteration of the AMEND algorithm.}
 
 \item{agg.method}{A named list. The element 'primary' contains the name of the primary layer for a multiplex component to be used during subnetwork identification. The element 'agg.method' contains a character scalar referring to an aggregation function.}
+
+\item{degree.bias}{List or NULL. NULL (default) for no degree bias adjustment. List names should include 'component', which is a character string of length greater than or equal to 1 specifying the components or layers to which the degree bias adjustment will be applied, and 'method', which is a character string of 'BS' (bistochastic scaling), 'IN' (inflation-normalization), or 'SDS' (stationary distribution scaling).}
+
+\item{in.parallel}{Logical. Run computations in parallel.}
+
+\item{n.cores}{number of cores to use in parallel computations}
 }
 \value{
 a list containing an igraph object, subnetwork score, and restart value

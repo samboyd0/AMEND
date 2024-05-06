@@ -11,7 +11,8 @@ RWR(
   heterogeneous = FALSE,
   multiplex = FALSE,
   net.weight,
-  layer.weight
+  layer.weight,
+  stop_step = 50
 )
 }
 \arguments{
@@ -28,6 +29,8 @@ RWR(
 \item{net.weight}{A named vector, or NULL. Relative weight given to nodes of a component of graph, applied to seed vector in RWR. Only used when heterogeneous=TRUE.}
 
 \item{layer.weight}{A named list of named vectors, or NULL. Relative weight given to nodes of a layer of a component of graph, applied to seed vector in RWR. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.}
+
+\item{stop_step}{Maximum number of iterations of RWR.}
 }
 \value{
 matrix of diffusion scores from RWR

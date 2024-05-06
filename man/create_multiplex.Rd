@@ -4,16 +4,12 @@
 \alias{create_multiplex}
 \title{Link common nodes between layers of multiplex.}
 \usage{
-create_multiplex(adj_matrix, multiplex.comps, data.type, brw.attr.nm)
+create_multiplex(adj_matrix, multiplex.comps)
 }
 \arguments{
 \item{adj_matrix}{list of adjacency matrices.}
 
 \item{multiplex.comps}{character vector of names of unique components that are multiplex.}
-
-\item{data.type}{character vector of names of vertex attributes to preserve}
-
-\item{brw.attr.nm}{character scalar  of vertex attribute name for biased random walk.}
 }
 \value{
 A list of fused multiplex components

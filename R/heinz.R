@@ -68,7 +68,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
     }
     v.id <- seq(1, vcount(ig))
     names(v.id) <- V(ig)$name
-    edgelist <- igraph::get.edgelist(ig, names = FALSE)
+    edgelist <- igraph::as_edgelist(ig, names = FALSE)
     edgelist1 <- edgelist[, 1]
     edgelist2 <- edgelist[, 2]
     # This for loop is changing the edgelist to treat the nodes in each meta-node as one node
@@ -111,8 +111,8 @@ heinz = function(ig, scores, min.cluster.size = 2){
     tmp_score[tmp_score > 0] <- 0
     V(mig)$score.degree <- score.degree * tmp_score
     E(mig)$weight <- rep(0, length(E(mig)))
-    tmp_n1 <- igraph::get.edgelist(mig, names = FALSE)[, 1]
-    tmp_n2 <- igraph::get.edgelist(mig, names = FALSE)[, 2]
+    tmp_n1 <- igraph::as_edgelist(mig, names = FALSE)[, 1]
+    tmp_n2 <- igraph::as_edgelist(mig, names = FALSE)[, 2]
     E(mig)$weight <- -(V(mig)[tmp_n1]$score.degree + V(mig)[tmp_n2]$score.degree)
     # This is to ensure the transformed graph is connected. If input graph is connected, this will always be connected.
     # If not connected, choose component with largest sum of meta-node scores
@@ -124,7 +124,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
       mig <- decomp.graphs[[which.max(sum.pos)]]
     }
     # Minimum spanning tree of transformed graph
-    mst <- igraph::minimum.spanning.tree(mig, weights = E(mig)$weight)
+    mst <- igraph::mst(mig, weights = E(mig)$weight)
     mst.cluster.id <- grep("cluster", V(mst)$name)
     names(mst.cluster.id) <- V(mst)[mst.cluster.id]$name
     tmp <- unlist(strsplit(names(mst.cluster.id), "cluster"))
@@ -193,7 +193,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
         for(j in seq_along(clust.ids)){
           subg.tmp <- igraph::induced_subgraph(subg, which(clust$membership == clust.ids[j]))
           if(!igraph::is_simple(subg.tmp)) subg.tmp = igraph::simplify(subg.tmp)
-          mst.subg.tmp <- igraph::minimum.spanning.tree(subg.tmp, E(subg.tmp)$weight) # MST of linker graph
+          mst.subg.tmp <- igraph::mst(subg.tmp, E(subg.tmp)$weight) # MST of linker graph
           # Find highest scoring path (by vertex weights) in the linker MST plus attached meta-nodes (Step vii in dNetFind function documentation)
           max.score <- 0
           mst.subg.score.tmp = igraph::vertex_attr(mst.subg.tmp, van)
@@ -245,7 +245,8 @@ heinz = function(ig, scores, min.cluster.size = 2){
           V(subgraph)$type <- type
           subgraph.list[[j]] = subgraph
         }
-        subgraph.list = subgraph.list[order(unlist(lapply(subgraph.list, vcount)), decreasing = TRUE)] # graphs are in descending order
+        # subgraph.list = subgraph.list[order(unlist(lapply(subgraph.list, vcount)), decreasing = TRUE)] # graphs are in descending order
+        subgraph.list = subgraph.list[order(unlist(lapply(subgraph.list, function(x) sum(igraph::vertex_attr(x, van)))), decreasing = TRUE)] # graphs are in descending order by sum of scores (4/25)
         subgraph.scores = lapply(subgraph.list, function(x) sum(igraph::vertex_attr(x, van)))
         g.tmp = subgraph.list[[1]]
         score.tmp = sum(igraph::vertex_attr(subgraph.list[[1]], van))
@@ -264,7 +265,7 @@ heinz = function(ig, scores, min.cluster.size = 2){
         return(g.tmp)
       }else{
         if(!igraph::is_simple(subg)) subg = igraph::simplify(subg)
-        mst.subg <- igraph::minimum.spanning.tree(subg, E(subg)$weight) # MST of linker graph
+        mst.subg <- igraph::mst(subg, E(subg)$weight) # MST of linker graph
         getPathScore <- function(path, g1.score, g1.clust, g2.score){
           s1 <- g1.score[path] # scores from a path in the MST linker graph
           tmp <- unique(unlist(g1.clust[path])) # meta nodes that linker nodes along 'path' are connected to

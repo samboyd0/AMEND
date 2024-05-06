@@ -18,7 +18,9 @@ Imports:
     igraph,
     Matrix,
     methods,
-    RSpectra
+    parallel,
+    doParallel,
+    foreach
 Depends: 
     R (>= 2.10)
 Suggests: 

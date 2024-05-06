@@ -12,7 +12,10 @@ transition_matrix(
   multiplex = FALSE,
   jump.prob,
   switch.layer.prob,
-  brw.attr = NULL
+  brw.attr = NULL,
+  degree.bias = NULL,
+  in.parallel = FALSE,
+  n.cores
 )
 }
 \arguments{
@@ -31,6 +34,12 @@ transition_matrix(
 \item{switch.layer.prob}{A named list of named vectors, or NULL. Probability of random walker to switch from current layer in a multiplex to another layer in same component. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.}
 
 \item{brw.attr}{A numeric vector or NULL. Biased random walk vertex attribute values. Should be non-negative, with values greater (lesser) than 1 increasing (decreasing) transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1.}
+
+\item{degree.bias}{List or NULL. NULL (default) for no degree bias adjustment. List names should include 'component', which is a character string of length greater than or equal to 1 specifying the components or layers to which the degree bias adjustment will be applied, and 'method', which is a character string of 'BS' (bistochastic scaling), 'IN' (inflation-normalization), or 'SDS' (stationary distribution scaling).}
+
+\item{in.parallel}{Logical. Run computations in parallel.}
+
+\item{n.cores}{number of cores to use in parallel computations}
 }
 \value{
 transition matrix

@@ -1,4 +1,5 @@
 #' @importFrom igraph vcount V V<- E E<- vertex_attr vertex_attr<-
+#' @importFrom foreach %dopar%
 
 #' @title Create a transition matrix from the adjacency matrix of a graph
 #'
@@ -20,6 +21,9 @@
 #' @param jump.prob A named vector, or NULL. Probability of random walker jumping from one component of graph to another in RWR. Only used when heterogeneous=TRUE.
 #' @param switch.layer.prob A named list of named vectors, or NULL. Probability of random walker to switch from current layer in a multiplex to another layer in same component. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.
 #' @param brw.attr A numeric vector or NULL. Biased random walk vertex attribute values. Should be non-negative, with values greater (lesser) than 1 increasing (decreasing) transition probabilities to a node in RWR. If NULL, all nodes are given a value of 1.
+#' @param degree.bias List or NULL. NULL (default) for no degree bias adjustment. List names should include 'component', which is a character string of length greater than or equal to 1 specifying the components or layers to which the degree bias adjustment will be applied, and 'method', which is a character string of 'BS' (bistochastic scaling), 'IN' (inflation-normalization), or 'SDS' (stationary distribution scaling).
+#' @param in.parallel Logical. Run computations in parallel.
+#' @param n.cores number of cores to use in parallel computations
 #'
 #' @return transition matrix
 #'
@@ -44,7 +48,7 @@
 #'
 #' @export
 transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0.5, heterogeneous = FALSE, multiplex = FALSE,
-                              jump.prob, switch.layer.prob, brw.attr = NULL){
+                              jump.prob, switch.layer.prob, brw.attr = NULL, degree.bias = NULL, in.parallel = FALSE, n.cores){
   # Extract dimnames
   adj.dimnames = dimnames(adjM)
 
@@ -61,6 +65,10 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
 
   if(!heterogeneous && !multiplex){
     nadjM = column_normalize(adjM, norm, k, dimnames(adjM))
+    if(!is.null(degree.bias)){
+      if(degree.bias$method == 'BS') nadjM = bistochastic_scaling(nadjM)
+      if(degree.bias$method == 'IN') nadjM = inflate_normalize(nadjM)
+    }
   }else if(heterogeneous && !multiplex){
     # Normalize monoplex components
     uniq.types = unique(node_type)
@@ -70,46 +78,62 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
       id = which(get.type(rownames(adjM), 3) %in% monoplex.comps[i])
       mono.adj[[i]] = adjM[id,id,drop=FALSE]
     }
-    mono.norm = vector("list", length(monoplex.comps)); names(mono.norm) = monoplex.comps
-    for(i in seq_along(mono.adj)){
-      new.mat = column_normalize(mono.adj[[i]], norm, k, dimnames(mono.adj[[i]]))
-      mono.norm[[i]] = sum2one(new.mat)
+
+    if(!in.parallel){
+      mono.norm = vector("list", length(monoplex.comps)); names(mono.norm) = monoplex.comps
+      for(i in seq_along(mono.adj)){
+        new.mat = column_normalize(mono.adj[[i]], norm, k, dimnames(mono.adj[[i]]))
+        mono.norm[[i]] = sum2one(new.mat)
+        if(!is.null(degree.bias) && names(mono.norm)[i] %in% degree.bias$component){
+          if(degree.bias$method == 'BS') mono.norm[[i]] = bistochastic_scaling(mono.norm[[i]])
+          if(degree.bias$method == 'IN') mono.norm[[i]] = inflate_normalize(mono.norm[[i]])
+        }
+      }
     }
-    adj.comps = mono.norm
+    if(in.parallel){
+      cl = parallel::makeForkCluster(n.cores, outfile = "")
+      doParallel::registerDoParallel(cl)
+      mono.norm = foreach::foreach(i = 1:length(monoplex.comps), .verbose = FALSE, .packages = c("igraph", "Matrix"), .export = NULL, .noexport = NULL) %dopar% {
+        new.mat = column_normalize(mono.adj[[i]], norm, k, dimnames(mono.adj[[i]]))
+        new.mat = sum2one(new.mat)
+        if(!is.null(degree.bias) && monoplex.comps[i] %in% degree.bias$component){
+          if(degree.bias$method == 'BS') new.mat = bistochastic_scaling(new.mat)
+          if(degree.bias$method == 'IN') new.mat = inflate_normalize(new.mat)
+        }
+        new.mat
+      }
+      parallel::stopCluster(cl)
+      names(mono.norm) = monoplex.comps
+    }
 
     # Normalize off-diagonal sub-matrices (and sub-sub matrices), then combine adjacency matrices
     uniq.types = unique(extract_string(node_type, "_", pos=1))
-    new.mat = adj.comps[[1]]
+    new.mat = mono.norm[[1]]
     for(i in 2:length(uniq.types)){ # Outside (row)
       for(j in 1:(i-1)){ # Inside (col)
-        nt.r = get.type(rownames(adj.comps[[i]]),2)
+        nt.r = get.type(rownames(mono.norm[[i]]),2)
         uniq.nt.r = unique(nt.r)
-        nt.c = get.type(colnames(adj.comps[[j]]),2)
+        nt.c = get.type(colnames(mono.norm[[j]]),2)
         uniq.nt.c = unique(nt.c)
-        L.r = length(uniq.nt.r)
-        L.c = length(uniq.nt.c)
-        bottom.left.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[i]]), ncol = ncol(adj.comps[[j]]), dimnames = list(rownames(adj.comps[[i]]), colnames(adj.comps[[j]])), sparse = TRUE)
-        for(ii in seq_len(L.r)){ # Row-wise
-          for(jj in seq_len(L.c)){ # Col-wise
+        bottom.left.tmp = Matrix::Matrix(data = 0, nrow = nrow(mono.norm[[i]]), ncol = ncol(mono.norm[[j]]), dimnames = list(rownames(mono.norm[[i]]), colnames(mono.norm[[j]])), sparse = TRUE)
+        for(ii in seq_along(uniq.nt.r)){ # Row-wise
+          for(jj in seq_along(uniq.nt.c)){ # Col-wise
             tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
             bottom.left.tmp[which(nt.r == uniq.nt.r[ii]), which(nt.c == uniq.nt.c[jj])] = tmp
           }
         }
-        nt.r = get.type(rownames(adj.comps[[j]]),2)
-        nt.c = get.type(colnames(adj.comps[[i]]),2)
+        nt.r = get.type(rownames(mono.norm[[j]]),2)
+        nt.c = get.type(colnames(mono.norm[[i]]),2)
         uniq.nt.r = unique(nt.r)
         uniq.nt.c = unique(nt.c)
-        L.r = length(uniq.nt.r)
-        L.c = length(uniq.nt.c)
-        top.right.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[j]]), ncol = ncol(adj.comps[[i]]), dimnames = list(rownames(adj.comps[[j]]), colnames(adj.comps[[i]])), sparse = TRUE)
-        for(ii in seq_len(L.r)){ # Row-wise
-          for(jj in seq_len(L.c)){ # Col-wise
+        top.right.tmp = Matrix::Matrix(data = 0, nrow = nrow(mono.norm[[j]]), ncol = ncol(mono.norm[[i]]), dimnames = list(rownames(mono.norm[[j]]), colnames(mono.norm[[i]])), sparse = TRUE)
+        for(ii in seq_along(uniq.nt.r)){ # Row-wise
+          for(jj in seq_along(uniq.nt.c)){ # Col-wise
             tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
-            # tmp = column_normalize(tmp, norm, k)
             top.right.tmp[which(nt.r == uniq.nt.r[ii]), which(nt.c == uniq.nt.c[jj])] = tmp
           }
         }
@@ -121,7 +145,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
           bottom.left.mat = cbind(bottom.left.mat, bottom.left.tmp)
         }
       }
-      new.mat = cbind(rbind(new.mat, bottom.left.mat), rbind(top.right.mat, adj.comps[[i]]))
+      new.mat = cbind(rbind(new.mat, bottom.left.mat), rbind(top.right.mat, mono.norm[[i]]))
     }
 
     ## Apply jump.prob (which will be a named vector)
@@ -135,7 +159,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
       ntc = length(nL) # Number of other node type connections for node j
       current = nt[j] # current node type
       other = nt[r.ids] # other node types
-      if(all(other != current)) tmp = 1 else tmp = jump.prob[current]
+      tmp = ifelse(all(other != current), 1, jump.prob[current])
       if(ntc == 0) jp = 1 else jp = ifelse(other == current, 1 - jump.prob[current], tmp / ( ntc * nL[match(other, names(nL))] ) )
       new.mat@x[x.ids] = new.mat@x[x.ids] * jp
     }
@@ -144,7 +168,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
     # Normalize multiplex components
     ## Get Multiplex components as a list of adjacency matrices
     uniq.types = unique(node_type)
-    multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", pos=1))
+    multiplex.comps = unique(extract_string(uniq.types[grepl("_", uniq.types)], "_", pos=1)) # Should be length 1
     id = which(get.type(rownames(adjM), 3) %in% multiplex.comps)
     multi.adj = adjM[id,id,drop=FALSE]
 
@@ -171,7 +195,10 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         tmp = multi.adj[l.ids[[j]], l.ids[[ii]],drop=FALSE]
         tmp.dimnames = list(dimnames(multi.adj)[[1]][l.ids[[j]]], dimnames(multi.adj)[[2]][l.ids[[ii]]])
         tmp = column_normalize(tmp, norm, k, tmp.dimnames)
-        # tmp = column_normalize(tmp, norm, k)
+        if(j == ii & !is.null(degree.bias) && paste(multiplex.comps, uniq.l[j], sep='_') %in% degree.bias$component){
+          if(degree.bias$method == 'BS') tmp = bistochastic_scaling(tmp)
+          if(degree.bias$method == 'IN') tmp = inflate_normalize(tmp)
+        }
         new.mat[l.ids[[j]], l.ids[[ii]]] = tmp
       }
     }
@@ -182,7 +209,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
       x.ids = (new.mat@p[j] + 1):new.mat@p[j+1]
       current.layer = nt[j]
       other.layers = nt[new.mat@i[x.ids] + 1]
-      if(all(other.layers != current.layer)) tmp = 1 else tmp = slp[current.layer]
+      tmp = ifelse(all(other.layers != current.layer), 1, slp[current.layer])
       if(nL[j] == 0) switch.probs = 1 else switch.probs = ifelse(other.layers == current.layer, 1 - slp[current.layer], tmp / nL[j])
       new.mat@x[x.ids] = new.mat@x[x.ids] * switch.probs
     }
@@ -198,48 +225,106 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
       multi.adj[[i]] = adjM[id,id,drop=FALSE]
     }
 
-    multi.norm = vector("list", length(multiplex.comps)); names(multi.norm) = multiplex.comps
-    for(i in seq_along(multi.adj)){ # For each multiplex component
-      # Column sums to determine columns of all zeros
-      cs = Matrix::colSums(multi.adj[[i]])
-      ## Number of layers
-      L = length(unique(get.type(rownames(multi.adj[[i]]), 2)))
-      ## IDs of columns for each layer as a list
-      uniq.l = unique(get.type(rownames(multi.adj[[i]]),4))
-      l.ids = vector("list", L)
-      for(j in seq_along(l.ids)){
-        l.ids[[j]] = which(get.type(rownames(multi.adj[[i]]),4) == uniq.l[j])
-      }
-      ## Number of other layers each node connects to
-      nL = numeric(nrow(multi.adj[[i]])); names(nL) = rownames(multi.adj[[i]])
-      for(j in which(cs != 0)){ # seq_len(ncol(multi.adj[[i]]))
-        id = multi.adj[[i]]@i[(multi.adj[[i]]@p[j] + 1):multi.adj[[i]]@p[j+1]] + 1 # row ids of non-zero elements in column j
-        nnt = get.type(rownames(multi.adj[[i]])[id],2)
-        nnt = nnt[nnt != get.type(rownames(multi.adj[[i]])[j],2)]
-        nL[j] = length(unique(nnt))
-      }
-      ## Normalize each sub-matrix of each multiplex component
-      new.mat = Matrix::Matrix(data = 0, nrow = nrow(multi.adj[[i]]), ncol = ncol(multi.adj[[i]]), dimnames = dimnames(multi.adj[[i]]), sparse = TRUE)
-      for(j in seq_len(L)){ # Row-wise
-        for(ii in seq_len(L)){ # Col-wise
-          tmp = multi.adj[[i]][l.ids[[j]], l.ids[[ii]],drop=FALSE]
-          tmp.dimnames = list(dimnames(multi.adj[[i]])[[1]][l.ids[[j]]], dimnames(multi.adj[[i]])[[2]][l.ids[[ii]]])
-          tmp = column_normalize(tmp, norm, k, tmp.dimnames)
-          new.mat[l.ids[[j]], l.ids[[ii]]] = tmp
+    if(!in.parallel){
+      multi.norm = vector("list", length(multiplex.comps)); names(multi.norm) = multiplex.comps
+      for(i in seq_along(multi.adj)){ # For each multiplex component
+        # Column sums to determine columns of all zeros
+        cs = Matrix::colSums(multi.adj[[i]])
+        ## Number of layers
+        L = length(unique(get.type(rownames(multi.adj[[i]]), 2)))
+        ## IDs of columns for each layer as a list
+        uniq.l = unique(get.type(rownames(multi.adj[[i]]),4))
+        l.ids = vector("list", L)
+        for(j in seq_along(l.ids)){
+          l.ids[[j]] = which(get.type(rownames(multi.adj[[i]]),4) == uniq.l[j])
         }
+        ## Number of other layers each node connects to
+        nL = numeric(nrow(multi.adj[[i]])); names(nL) = rownames(multi.adj[[i]])
+        for(j in which(cs != 0)){ # seq_len(ncol(multi.adj[[i]]))
+          id = multi.adj[[i]]@i[(multi.adj[[i]]@p[j] + 1):multi.adj[[i]]@p[j+1]] + 1 # row ids of non-zero elements in column j
+          nnt = get.type(rownames(multi.adj[[i]])[id],2)
+          nnt = nnt[nnt != get.type(rownames(multi.adj[[i]])[j],2)]
+          nL[j] = length(unique(nnt))
+        }
+        ## Normalize each sub-matrix of each multiplex component
+        new.mat = Matrix::Matrix(data = 0, nrow = nrow(multi.adj[[i]]), ncol = ncol(multi.adj[[i]]), dimnames = dimnames(multi.adj[[i]]), sparse = TRUE)
+        for(j in seq_len(L)){ # Row-wise
+          for(ii in seq_len(L)){ # Col-wise
+            tmp = multi.adj[[i]][l.ids[[j]], l.ids[[ii]],drop=FALSE]
+            tmp.dimnames = list(dimnames(multi.adj[[i]])[[1]][l.ids[[j]]], dimnames(multi.adj[[i]])[[2]][l.ids[[ii]]])
+            tmp = column_normalize(tmp, norm, k, tmp.dimnames)
+            if(j == ii & !is.null(degree.bias) && paste(multiplex.comps[i], uniq.l[j], sep='_') %in% degree.bias$component){
+              if(degree.bias$method == 'BS') tmp = bistochastic_scaling(tmp)
+              if(degree.bias$method == 'IN') tmp = inflate_normalize(tmp)
+            }
+            new.mat[l.ids[[j]], l.ids[[ii]]] = tmp
+          }
+        }
+        ## Apply switch.layer.prob (which will be a named list of named vectors)
+        nt = get.type(rownames(new.mat),2)
+        slp = switch.layer.prob[[names(multi.adj)[i]]]
+        for(j in which(cs != 0)){
+          x.ids = (new.mat@p[j] + 1):new.mat@p[j+1]
+          current.layer = nt[j]
+          other.layers = nt[new.mat@i[x.ids] + 1]
+          tmp = ifelse(all(other.layers != current.layer), 1, slp[current.layer])
+          if(nL[j] == 0) switch.probs = 1 else switch.probs = ifelse(other.layers == current.layer, 1 - slp[current.layer], tmp / nL[j])
+          new.mat@x[x.ids] = new.mat@x[x.ids] * switch.probs
+        }
+        multi.norm[[i]] = sum2one(new.mat)
       }
-      ## Apply switch.layer.prob (which will be a named list of named vectors)
-      nt = get.type(rownames(new.mat),2)
-      slp = switch.layer.prob[[names(multi.adj)[i]]]
-      for(j in which(cs != 0)){
-        x.ids = (new.mat@p[j] + 1):new.mat@p[j+1]
-        current.layer = nt[j]
-        other.layers = nt[new.mat@i[x.ids] + 1]
-        if(all(other.layers != current.layer)) tmp = 1 else tmp = slp[current.layer]
-        if(nL[j] == 0) switch.probs = 1 else switch.probs = ifelse(other.layers == current.layer, 1 - slp[current.layer], tmp / nL[j])
-        new.mat@x[x.ids] = new.mat@x[x.ids] * switch.probs
+    }
+    if(in.parallel){
+      cl = parallel::makeForkCluster(n.cores, outfile = "")
+      doParallel::registerDoParallel(cl)
+      multi.norm = foreach::foreach(i = 1:length(multi.adj), .verbose = FALSE, .packages = c("igraph", "Matrix"), .export = NULL, .noexport = NULL) %dopar% {
+        # Column sums to determine columns of all zeros
+        cs = Matrix::colSums(multi.adj[[i]])
+        ## Number of layers
+        L = length(unique(get.type(rownames(multi.adj[[i]]), 2)))
+        ## IDs of columns for each layer as a list
+        uniq.l = unique(get.type(rownames(multi.adj[[i]]),4))
+        l.ids = vector("list", L)
+        for(j in seq_along(l.ids)){
+          l.ids[[j]] = which(get.type(rownames(multi.adj[[i]]),4) == uniq.l[j])
+        }
+        ## Number of other layers each node connects to
+        nL = numeric(nrow(multi.adj[[i]])); names(nL) = rownames(multi.adj[[i]])
+        for(j in which(cs != 0)){
+          id = multi.adj[[i]]@i[(multi.adj[[i]]@p[j] + 1):multi.adj[[i]]@p[j+1]] + 1 # row ids of non-zero elements in column j
+          nnt = get.type(rownames(multi.adj[[i]])[id],2)
+          nnt = nnt[nnt != get.type(rownames(multi.adj[[i]])[j],2)]
+          nL[j] = length(unique(nnt))
+        }
+        ## Normalize each sub-matrix of each multiplex component
+        new.mat = Matrix::Matrix(data = 0, nrow = nrow(multi.adj[[i]]), ncol = ncol(multi.adj[[i]]), dimnames = dimnames(multi.adj[[i]]), sparse = TRUE)
+        for(j in seq_len(L)){ # Row-wise
+          for(ii in seq_len(L)){ # Col-wise
+            tmp = multi.adj[[i]][l.ids[[j]], l.ids[[ii]],drop=FALSE]
+            tmp.dimnames = list(dimnames(multi.adj[[i]])[[1]][l.ids[[j]]], dimnames(multi.adj[[i]])[[2]][l.ids[[ii]]])
+            tmp = column_normalize(tmp, norm, k, tmp.dimnames)
+            if(j == ii & !is.null(degree.bias) && paste(multiplex.comps[i], uniq.l[j], sep='_') %in% degree.bias$component){
+              if(degree.bias$method == 'BS') tmp = bistochastic_scaling(tmp)
+              if(degree.bias$method == 'IN') tmp = inflate_normalize(tmp)
+            }
+            new.mat[l.ids[[j]], l.ids[[ii]]] = tmp
+          }
+        }
+        ## Apply switch.layer.prob (which will be a named list of named vectors)
+        nt = get.type(rownames(new.mat),2)
+        slp = switch.layer.prob[[names(multi.adj)[i]]]
+        for(j in which(cs != 0)){
+          x.ids = (new.mat@p[j] + 1):new.mat@p[j+1]
+          current.layer = nt[j]
+          other.layers = nt[new.mat@i[x.ids] + 1]
+          tmp = ifelse(all(other.layers != current.layer), 1, slp[current.layer])
+          if(nL[j] == 0) switch.probs = 1 else switch.probs = ifelse(other.layers == current.layer, 1 - slp[current.layer], tmp / nL[j])
+          new.mat@x[x.ids] = new.mat@x[x.ids] * switch.probs
+        }
+        sum2one(new.mat)
       }
-      multi.norm[[i]] = sum2one(new.mat)
+      parallel::stopCluster(cl)
+      names(multi.norm) = multiplex.comps
     }
 
     # Normalize monoplex components
@@ -250,12 +335,32 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         id = which(get.type(rownames(adjM), 3) %in% monoplex.comps[i])
         mono.adj[[i]] = adjM[id,id,drop=FALSE]
       }
-      mono.norm = vector("list", length(monoplex.comps)); names(mono.norm) = monoplex.comps
-      for(i in seq_along(mono.adj)){
-        new.mat = column_normalize(mono.adj[[i]], norm, k, dimnames(mono.adj[[i]]))
-        mono.norm[[i]] = sum2one(new.mat)
+      if(!in.parallel){
+        mono.norm = vector("list", length(monoplex.comps)); names(mono.norm) = monoplex.comps
+        for(i in seq_along(mono.adj)){
+          new.mat = column_normalize(mono.adj[[i]], norm, k, dimnames(mono.adj[[i]]))
+          mono.norm[[i]] = sum2one(new.mat)
+          if(!is.null(degree.bias) && names(mono.norm)[i] %in% degree.bias$component){
+            if(degree.bias$method == 'BS') mono.norm[[i]] = bistochastic_scaling(mono.norm[[i]])
+            if(degree.bias$method == 'IN') mono.norm[[i]] = inflate_normalize(mono.norm[[i]])
+          }
+        }
       }
-
+      if(in.parallel){
+        cl = parallel::makeForkCluster(n.cores, outfile = "")
+        doParallel::registerDoParallel(cl)
+        mono.norm = foreach::foreach(i = 1:length(monoplex.comps), .verbose = FALSE, .packages = c("igraph", "Matrix"), .export = NULL, .noexport = NULL) %dopar% {
+          new.mat = column_normalize(mono.adj[[i]], norm, k, dimnames(mono.adj[[i]]))
+          new.mat = sum2one(new.mat)
+          if(!is.null(degree.bias) && monoplex.comps[i] %in% degree.bias$component){
+            if(degree.bias$method == 'BS') new.mat = bistochastic_scaling(new.mat)
+            if(degree.bias$method == 'IN') new.mat = inflate_normalize(new.mat)
+          }
+          new.mat
+        }
+        parallel::stopCluster(cl)
+        names(mono.norm) = monoplex.comps
+      }
       adj.comps = c(multi.norm, mono.norm)
     }else adj.comps = multi.norm
 
@@ -268,11 +373,9 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         uniq.nt.r = unique(nt.r)
         nt.c = get.type(colnames(adj.comps[[j]]),2)
         uniq.nt.c = unique(nt.c)
-        L.r = length(uniq.nt.r)
-        L.c = length(uniq.nt.c)
         bottom.left.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[i]]), ncol = ncol(adj.comps[[j]]), dimnames = list(rownames(adj.comps[[i]]), colnames(adj.comps[[j]])), sparse = TRUE)
-        for(ii in seq_len(L.r)){ # Row-wise
-          for(jj in seq_len(L.c)){ # Col-wise
+        for(ii in seq_along(uniq.nt.r)){ # Row-wise
+          for(jj in seq_along(uniq.nt.c)){ # Col-wise
             tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
@@ -283,11 +386,9 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
         nt.c = get.type(colnames(adj.comps[[i]]),2)
         uniq.nt.r = unique(nt.r)
         uniq.nt.c = unique(nt.c)
-        L.r = length(uniq.nt.r)
-        L.c = length(uniq.nt.c)
         top.right.tmp = Matrix::Matrix(data = 0, nrow = nrow(adj.comps[[j]]), ncol = ncol(adj.comps[[i]]), dimnames = list(rownames(adj.comps[[j]]), colnames(adj.comps[[i]])), sparse = TRUE)
-        for(ii in seq_len(L.r)){ # Row-wise
-          for(jj in seq_len(L.c)){ # Col-wise
+        for(ii in seq_along(uniq.nt.r)){ # Row-wise
+          for(jj in seq_along(uniq.nt.c)){ # Col-wise
             tmp = adjM[which(get.type(rownames(adjM),2) == uniq.nt.r[ii]), which(get.type(colnames(adjM),2) == uniq.nt.c[jj]),drop=FALSE]
             tmp.dimnames = list(dimnames(adjM)[[1]][which(get.type(rownames(adjM),2) == uniq.nt.r[ii])], dimnames(adjM)[[2]][which(get.type(colnames(adjM),2) == uniq.nt.c[jj])])
             tmp = column_normalize(tmp, norm, k, tmp.dimnames)
@@ -316,7 +417,8 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
       ntc = length(nL) # Number of connections with other node types for node j
       current = nt[j] # current node type
       other = nt[r.ids] # other node types
-      if(all(other != current)) tmp.jp = 1 else tmp.jp = jump.prob[current] # If node j is only connected to nodes of another type...
+      # If node j is only connected to nodes of another type, then jump prob = 1
+      tmp.jp = ifelse(all(other != current), 1, jump.prob[current])
       if(ntc == 0) jp = 1 else jp = ifelse(other == current, 1 - jump.prob[current], tmp.jp / ( ntc * nL[match(other, names(nL))] ) ) # If ntc == 0, then all(other == current)
       new.mat@x[x.ids] = new.mat@x[x.ids] * jp
     }
@@ -340,6 +442,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
 #' @param multiplex Logical. If true, graph is assumed to contain multiplex components.
 #' @param net.weight A named vector, or NULL. Relative weight given to nodes of a component of graph, applied to seed vector in RWR. Only used when heterogeneous=TRUE.
 #' @param layer.weight A named list of named vectors, or NULL. Relative weight given to nodes of a layer of a component of graph, applied to seed vector in RWR. List element names correspond to multiplex components, and vector names correspond to layers within a multiplex.
+#' @param stop_step Maximum number of iterations of RWR.
 #'
 #' @return matrix of diffusion scores from RWR
 #'
@@ -370,7 +473,7 @@ transition_matrix <- function(adjM, norm = c("degree", "modified_degree"), k = 0
 #' rwr = RWR(nadjM = adj_norm, setSeeds = seeds, restart = 0.8)
 #'
 #' @export
-RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, multiplex = FALSE, net.weight, layer.weight){
+RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, multiplex = FALSE, net.weight, layer.weight, stop_step = 50){
   # NB: In the context of run_AMEND(), nadjM and setSeeds will be in the same order
   if (is.null(restart) || is.na(restart) || restart < 0 || restart > 100) {
     r <- 0.75
@@ -380,59 +483,59 @@ RWR <- function (nadjM, setSeeds = NULL, restart = 0.75, heterogeneous = FALSE, 
     r <- restart
   }
   stop_delta <- 1e-06
-  stop_step <- 50
-  if (is.null(setSeeds)) {
-    stop("setSeeds must be non-NULL")
-  }else {
-    node_type = get.type(rownames(nadjM),2)
-    if (is.data.frame(setSeeds)) {
-      data <- as.matrix(setSeeds)
-    }else if (is.vector(setSeeds)) {
-      data <- as.matrix(setSeeds, ncol = 1)
-    }else data <- setSeeds
-    if (is.null(rownames(data))) {
-      stop("The function must require the row names of the input setSeeds.\n")
-    }else if (any(is.na(rownames(data)))) {
-      warning("setSeeds with NA as row names will be removed")
-      data <- data[!is.na(rownames(data)), ,drop=FALSE]
-      node_type = node_type[!is.na(rownames(data))]
+  # stop_step <- 50
+  if (is.null(setSeeds)){
+    # stop("setSeeds must be non-NULL")
+    setSeeds = matrix(1, ncol = 1, nrow = nrow(nadjM), dimnames = list(rownames(nadjM)))
+  }
+  node_type = get.type(rownames(nadjM),2)
+  if (is.data.frame(setSeeds)) {
+    data <- as.matrix(setSeeds)
+  }else if (is.vector(setSeeds)) {
+    data <- as.matrix(setSeeds, ncol = 1)
+  }else data <- setSeeds
+  if (is.null(rownames(data))) {
+    stop("The function must require the row names of the input setSeeds.\n")
+  }else if (any(is.na(rownames(data)))) {
+    warning("setSeeds with NA as row names will be removed")
+    data <- data[!is.na(rownames(data)), ,drop=FALSE]
+    node_type = node_type[!is.na(rownames(data))]
+  }
+  if(multiplex && heterogeneous){
+    layers = unique(node_type)
+    p0 = numeric(length(node_type))
+    for(i in seq_along(layers)){
+      id = which(node_type == layers[i])
+      if(grepl("_", layers[i])) tmp = layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]] else tmp = 1
+      p0[id] = sum2one(data[id, ,drop=FALSE]) * tmp
     }
-    if(multiplex && heterogeneous){
-      layers = unique(node_type)
-      p0 = numeric(length(node_type))
-      for(i in seq_along(layers)){
-        id = which(node_type == layers[i])
-        if(grepl("_", layers[i])) tmp = layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]] else tmp = 1
-        p0[id] = sum2one(data[id, ,drop=FALSE]) * tmp
-      }
-      nt = unique(extract_string(layers, "_", pos=1))
-      for(i in seq_along(nt)){
-        id = which(extract_string(node_type, "_", pos=1) == nt[i])
-        p0[id] = p0[id] * net.weight[nt[i]]
-      }
-      P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
+    nt = unique(extract_string(layers, "_", pos=1))
+    for(i in seq_along(nt)){
+      id = which(extract_string(node_type, "_", pos=1) == nt[i])
+      p0[id] = p0[id] * net.weight[nt[i]]
     }
-    if(!multiplex && heterogeneous){
-      nt = unique(node_type)
-      p0 = numeric(length(node_type))
-      for(i in seq_along(nt)){
-        id = which(node_type == nt[i])
-        p0[id] = sum2one(data[id, ,drop=FALSE]) * net.weight[nt[i]]
-      }
-      P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
+    P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
+  }
+  if(!multiplex && heterogeneous){
+    nt = unique(node_type)
+    p0 = numeric(length(node_type))
+    for(i in seq_along(nt)){
+      id = which(node_type == nt[i])
+      p0[id] = sum2one(data[id, ,drop=FALSE]) * net.weight[nt[i]]
     }
-    if(multiplex && !heterogeneous){
-      layers = unique(node_type)
-      p0 = numeric(length(node_type))
-      for(i in seq_along(layers)){
-        id = which(node_type == layers[i])
-        p0[id] = sum2one(data[id, ,drop=FALSE]) * layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]]
-      }
-      P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
+    P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
+  }
+  if(multiplex && !heterogeneous){
+    layers = unique(node_type)
+    p0 = numeric(length(node_type))
+    for(i in seq_along(layers)){
+      id = which(node_type == layers[i])
+      p0[id] = sum2one(data[id, ,drop=FALSE]) * layer.weight[[extract_string(layers[i], "_", pos=1)]][layers[i]]
     }
-    if(!multiplex && !heterogeneous){
-      P0matrix <- sum2one(data)
-    }
+    P0matrix = Matrix::Matrix(p0, ncol = 1, sparse = TRUE)
+  }
+  if(!multiplex && !heterogeneous){
+    P0matrix <- sum2one(data)
   }
   if (restart == 1) {
     PTmatrix <- P0matrix
@@ -482,9 +585,11 @@ entropy = function(x){
 #' @returns Probability vector of the stationary distribution.
 #'
 stationary.distr = function(x){
-  e = Re(RSpectra::eigs(A = x, k = 1, which = "LM")$vectors[,1])
-  tmp = e / sum(e)
-  ifelse(tmp < 0, 0, tmp)
+  # e = Re(RSpectra::eigs(A = x, k = 1, which = "LM")$vectors[,1])
+  # tmp = e / sum(e)
+  # ifelse(tmp < 0, 0, tmp)
+  e = RWR(nadjM = x, restart = 0, stop_step = 100)
+  e[,1]
 }
 
 #' @title Scale edge weights of adjacency matrix by degrees of adjacent nodes.
@@ -562,4 +667,180 @@ sum2one <- function(X) {
   dimnames(res) = x.dimnames
   res[is.na(res)] = 0 # This ensures that columns with all zeros that were divided by zero remain zero.
   res
+}
+
+#' @title Extract the diagonal elements of a matrix
+#'
+#' @description Extract the diagonal elements of a square matrix.
+#'
+#' @param X matrix
+#'
+#' @returns vector of diagonal elements of X.
+#'
+#' @export
+get_diagonal = function(X){
+  if(!"dgCMatrix" %in% class(X)) X = methods::as(methods::as(methods::as(X, "dMatrix"), "generalMatrix"), "CsparseMatrix")
+  d = numeric(ncol(X))
+  for(i in 1:ncol(X)){
+    id.tmp = (X@p[i] + 1):X@p[i+1] # ids of X@x that are non-zero and in col i
+    row.ids = X@i[id.tmp] + 1 # row ids of non-zero elements in col i
+    if(i %in% row.ids){ # if diagonal is non-zero
+      d[i] = X@x[id.tmp[row.ids == i]]
+    }else next
+  }
+  d
+}
+
+#' @title Iterative Proportional Fitting
+#'
+#' @description Scales input matrix X to have row and column sums approximately equal to 1, thereby transforming X to a bistochastic (doubly stochastic) matrix.
+#'
+#' @param X Matrix
+#' @param e Edge weight to add to zero-value diagonal elements of X to aid on convergence
+#'
+#' @returns A named list
+#'  B: scaled matrix from the matrix product PXQ
+#'  p: diagonal elements of diagonal matrix P
+#'  q: diagonal elements of diagonal matrix Q
+#'
+#'  @export
+ipf = function(X, e = 1e-6){
+  gamma = 1
+  # For starting transition matrix X, obtain B = PXQ, where B is bistochastic, P,Q are diagonal matrices, and B and X are as similar as possible (minimize relative entropy between B & X)
+  # Set target row sums depending on how much to homogenize degree influence. gamma = 1 for complete homogenization, gamma = 0 for no correction.
+  get_rowsum_targets = function(rs, l, t) rs - l * (rs - t)
+  target.row.sums = get_rowsum_targets(Matrix::rowSums(X), gamma, 1)
+  target.col.sums = 1
+
+  x.dimnames = dimnames(X)
+
+  # Adding self-loops to aid in convergence
+  d = get_diagonal(X)
+  d[d == 0] = e
+  X = X + Matrix::Diagonal(n = nrow(X), x = d)
+
+  stop_delta = 1e-6
+  step = 1
+  stop_step = 200
+  q1 = rep(1, nrow(X)) # initialize the diagonal elements of Q
+  p1 = rep(1, nrow(X)) # initialize the diagonal elements of P
+  repeat{
+    # set p, given q (p are the diagonal elements of P)
+    p2 = target.row.sums / Matrix::rowSums(X %*% Matrix::Diagonal(x = q1))
+    # set q, given p found above (q are the diagonal elements of Q)
+    q2 = target.col.sums / Matrix::colSums(Matrix::Diagonal(x = p2) %*% X)
+
+    # delta.p = all(abs(p2 - p1) <= stop_delta)
+    # delta.q = all(abs(q2 - q1) <= stop_delta)
+    delta.p = sum(abs(p2 - p1)) <= stop_delta
+    delta.q = sum(abs(q2 - q1)) <= stop_delta
+    step = step + 1
+    if((delta.p && delta.q) || step > stop_step) break
+    q1 = q2
+    p1 = p2
+  }
+  P = Matrix::Diagonal(x = p2)
+  Q = Matrix::Diagonal(x = q2)
+  B = P %*% X %*% Q
+  dimnames(B) = x.dimnames
+  return(list(B = B, p = p2, q = q2))
+}
+
+#' @title Bistochastic Scaling
+#'
+#' @description Directly modify the transition matrix to attenuate the influence of degree on diffusion scores (as evidenced by an increased entropy of stationary distribution associated with the modified transition matrix).
+#' This is done by scaling the transition matrix to be approximately bistochastic (all row & column sums equal 1).
+#'
+#' @param trans_mat transition matrix
+#'
+#' @returns A modified transition matrix that is approximately bistochastic and thus has been adjusted for degree bias.
+#'
+#' @export
+bistochastic_scaling = function(trans_mat){
+  gamma = 1
+  if(gamma == 0) return(trans_mat)
+  x = 1e-6
+  if(!"dgCMatrix" %in% class(trans_mat)) trans_mat = methods::as(methods::as(methods::as(trans_mat, "dMatrix"), "generalMatrix"), "CsparseMatrix")
+  B.tmp = ipf(trans_mat, x) # ipf(trans_mat, x, gamma)
+  B = B.tmp$B
+  b = get_diagonal(B)
+  tmp.res = numeric(Matrix::nnzero(B))
+  for(i in 1:ncol(B)){
+    if(b[i] == 0) next
+    id.tmp = (B@p[i] + 1):B@p[i+1] # ids of B@x that are non-zero and in col i
+    row.ids = B@i[id.tmp] + 1 # row ids of non-zero elements in col i
+    diag.id = id.tmp[row.ids == i]
+    off.id = id.tmp[row.ids != i]
+    # Evenly distribute to neighbors of node i. Preserves column sums
+    degr = B@p[i+1] - B@p[i] - 1 # number of non-zero elements in col i i.e., degree of node i. Minus 1 b/c of self-loops
+    tmp = b[i] / degr
+    tmp.res[diag.id] = 0
+    tmp.res[off.id] = B@x[off.id] + tmp
+  }
+  B@x = tmp.res
+  B = Matrix::drop0(B)
+  return(B)
+}
+
+#' @title Inflation-Normalization Procedure
+#'
+#' @description Directly modify the transition matrix to attenuate the influence of degree on diffusion scores (as evidenced by an increased entropy of stationary distribution associated with the modified transition matrix).
+#' This is done by raising the values in each row of a left-stochastic transition matrix by an exponent greater than one which is a positive linear function of the stationary probability of the node associated with that row. This is followed by column normalization. This procedure displaces incoming transition probabilities to a node to the other outgoing transition probabilities of its neighbors as a function of degree.
+#'
+#' @param nadjM a column-normalized adjacency matrix (i.e., transition matrix)
+#'
+#' @returns A modified transition matrix that has been adjusted for degree bias.
+#'
+#' @export
+inflate_normalize <- function (nadjM){
+  # Changing to a Row-compressed sparse matrix
+  nadjM = methods::as(methods::as(methods::as(nadjM, "dMatrix"), "generalMatrix"), "RsparseMatrix")
+  # Getting stationary distribution of nadjM
+  stat.distr1 = stationary.distr(nadjM)
+  e0 = entropy(stat.distr1)
+  # Performing Inflation/normalization on transition matrix
+  kf = c(1, 10, seq(50, 2000, 50))
+  res = numeric(length(kf))
+  for(j in seq_along(kf)){
+    inflation = 1 + kf[j] * stat.distr1
+    nadjM.tmp = nadjM
+    tmp = numeric(Matrix::nnzero(nadjM.tmp))
+    for(i in which(Matrix::rowSums(nadjM.tmp) != 0)){ # i corresponds to rows of nadjM
+      # id.tmp = (nadjM.tmp@p[i] + 1):nadjM.tmp@p[i+1] # ids of nadjM.tmp@x that are non-zero and in row i
+      # n.tmp = nadjM.tmp@p[i+1] - nadjM.tmp@p[i] # number of non-zero elements in row i
+      # tmp[id.tmp] = rep(inflation[i], n.tmp)
+      tmp[(nadjM.tmp@p[i] + 1):nadjM.tmp@p[i+1]] = rep(inflation[i], nadjM.tmp@p[i+1] - nadjM.tmp@p[i])
+    }
+    nadjM.tmp@x = nadjM.tmp@x ^ tmp
+    nadjM.tmp = sum2one(nadjM.tmp)
+    sd.tmp = stationary.distr(nadjM.tmp)
+    if(any(sd.tmp < 0 | sd.tmp > 1)){
+      if(j == 1){
+        nadjM = methods::as(methods::as(methods::as(nadjM, "dMatrix"), "generalMatrix"), "CsparseMatrix")
+        return(nadjM)
+      }else{
+        j = j-1
+        break
+      }
+    }
+    res[j] = entropy(sd.tmp)
+    if(j == 1){
+      if(res[j] < e0){
+        nadjM = methods::as(methods::as(methods::as(nadjM, "dMatrix"), "generalMatrix"), "CsparseMatrix")
+        return(nadjM)
+      }
+    }else if(res[j] <= res[j-1]){
+      break
+    }
+  }
+  res = res[1:j]
+  j = which.max(res)
+  inflation = 1 + kf[j] * stat.distr1
+  tmp = numeric(Matrix::nnzero(nadjM))
+  for(i in which(Matrix::rowSums(nadjM) != 0)){ # i corresponds to rows of nadjM
+    tmp[(nadjM@p[i] + 1):nadjM@p[i+1]] = rep(inflation[i], nadjM@p[i+1] - nadjM@p[i])
+  }
+  nadjM@x = nadjM@x ^ tmp
+  nadjM = sum2one(nadjM)
+  return(nadjM)
 }

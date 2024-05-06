@@ -8,7 +8,7 @@ run_AMEND(
   graph = NULL,
   adj_matrix = NULL,
   edge_list = NULL,
-  n = 25,
+  n = 50,
   data = NULL,
   node_type = NULL,
   brw.attr = NULL,
@@ -19,13 +19,16 @@ run_AMEND(
   aggregate.multiplex = NULL,
   normalize = c("degree", "modified_degree"),
   k = 0.5,
+  degree.bias = NULL,
   jump.prob = NULL,
   net.weight = NULL,
   switch.layer.prob = NULL,
   layer.weight = NULL,
   verbose = FALSE,
   eta = NULL,
-  identifier = 1
+  identifier = 1,
+  in.parallel = FALSE,
+  n.cores
 )
 }
 \arguments{
@@ -47,11 +50,13 @@ run_AMEND(
 
 \item{multiplex}{Logical. If true, graph is assumed to contain multiplex components.}
 
-\item{aggregate.multiplex}{A named list (for aggregating) or NULL (for no aggregating). The list element 'primary' contains the name of the primary layer for a multiplex component whose edges will be used during subnetwork identification. The multiplex component is collapsed onto this primary layer. The list element 'agg.method' contains a character scalar referring to an aggregation function for vertex attributes ('mean', 'median', 'sum', 'gmean', 'hmean'). gmean=geometric, hmean=harmonic.}
+\item{aggregate.multiplex}{A named list (for aggregating) or NULL (for no aggregating). The list element 'primary' contains the name of the primary layer for a multiplex component whose edges will be used during subnetwork identification. The multiplex component is collapsed onto this primary layer. The list element 'agg.method' contains a character scalar referring to an aggregation function for aggregating vertex attributes ('mean', 'median', 'sum', 'gmean', 'hmean'). gmean=geometric, hmean=harmonic.}
 
 \item{normalize}{Normalization scheme of adjacency matrix for random walk with restart}
 
 \item{k}{Value between 0 and 1. When normalize = "modified_degree", the adjacency matrix is first left and right multiplied by a diagonal matrix of node degrees, which is raised to the power -\emph{k}. As \emph{k} increases, edge weights are penalized more for the degrees of their adjacent nodes.}
+
+\item{degree.bias}{List or NULL. NULL (default) for no degree bias adjustment. List names should include 'component', which is a character string of length greater than or equal to 1 specifying the components or layers to which the degree bias adjustment will be applied, and 'method', which is a character string of 'BS' (bistochastic scaling), 'IN' (inflation-normalization), or 'SDS' (stationary distribution scaling).}
 
 \item{jump.prob, net.weight}{A named vector, or NULL. \emph{jump.prob} is the probability of random walker jumping from one component of graph to another in RWR. \emph{net.weight} is the relative weight given to nodes of a component of graph, applied to seed vector in RWR. Only used when heterogeneous=TRUE.}
 
@@ -62,6 +67,10 @@ run_AMEND(
 \item{eta}{Starting filtering rate. If NULL (default), a value is chosen based on the input network size and parameter \emph{n}.}
 
 \item{identifier}{Optional. For use when performing many runs of AMEND to keep track of progress.}
+
+\item{in.parallel}{Logical. Run computations in parallel.}
+
+\item{n.cores}{number of cores to use in parallel computations}
 }
 \value{
 a named list with the following elements:
@@ -91,6 +100,8 @@ See \code{create_integrated_graph()} details for proper naming conventions for n
 \code{run_AMEND()} can also implement a biased random walk based on a user-defined vertex attribute \emph{brw.attr}. These should be non-negative with larger values increasing transition probabilities to a node in RWR. This allows you to integrate other information (e.g., survival data) in active module identification. Another possible use is to artificially center modules around nodes of interest by using a character vector for \emph{brw.attr}. This will assign node values that decrease as a function of distance from these nodes of interest. The biased random walk is done by left multiplying the adjacency matrix by a diagonal matrix whose elements are values given by \emph{brw.attr}.
 
 The \emph{aggregate.multiplex} argument specifies whether multiplex layers should be collapsed for subnetwork identification. This involves running RWR on the full network and then collapsing the multiplex layers onto one layer given by the "primary" argument in the input list. RWR scores are aggregated using the 'agg.method' argument in input list. The subnetwork that is returned will contain the collapsed multiplex component rather than nodes from individual layers. This can be done for none, some, or all of the multiplex components of the input graph.
+
+The \emph{degree.bias} argument specifies whether degree bias should be adjusted for. Degree bias arises when certain molecules are studied more often then others, or if certain technologies systematically favor the identification of interactors of molecules with certain characteristics. There are 3 methods available: Inflation-normalization ('IN'), Bistochastic Scaling ('BS'), and Stationary Distribution Scaling ('SDS').
 
 See the \href{https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10324253/}{manuscript} for more details on the AMEND algorithm. There have been modifications to the algorithm as presented in the original paper.
 }
@@ -182,5 +193,5 @@ subnet5 = run_AMEND(adj_matrix = list.of.adjmats, n = 100, data = data.list.inpu
 
 }
 \seealso{
-\code{\link[=create_integrated_graph]{create_integrated_graph()}}, \code{\link[=list_input_checks]{list_input_checks()}}, \code{\link[=transition_matrix]{transition_matrix()}}, \code{\link[=RWR]{RWR()}}, \code{\link[=heinz]{heinz()}}, \code{\link[=get_subnetwork]{get_subnetwork()}}
+\code{\link[=create_integrated_graph]{create_integrated_graph()}}, \code{\link[=list_input_checks]{list_input_checks()}}, \code{\link[=transition_matrix]{transition_matrix()}}, \code{\link[=RWR]{RWR()}}, \code{\link[=heinz]{heinz()}}, \code{\link[=get_subnetwork]{get_subnetwork()}}, \code{\link[=inflate_normalize]{inflate_normalize()}}, \code{\link[=bistochastic_scaling]{bistochastic_scaling()}}
 }
